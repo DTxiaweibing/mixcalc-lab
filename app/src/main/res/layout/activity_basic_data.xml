@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#F5F5F5">
+
+    <!-- 标题栏 -->
+    <TextView
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="#2d8c42"
+        android:gravity="center"
+        android:text="@string/title_basic_data"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <!-- 标签切换栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:baselineAligned="false"
+        android:background="#F5F5F5"
+        android:padding="4dp">
+
+        <TextView
+            android:id="@+id/tab_basic"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/title_basic_data"
+            android:textColor="#2d8c42"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_tab_style" />
+
+        <TextView
+            android:id="@+id/tab_mix"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/tab_mix_health"
+            android:textColor="#666666"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_tab_style" />
+
+        <TextView
+            android:id="@+id/tab_water"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/tab_water_health"
+            android:textColor="#666666"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_tab_style" />
+    </LinearLayout>
+
+    <!-- 内容容器 -->
+    <FrameLayout
+        android:id="@+id/content_frame"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- 底部导航栏 -->
+    <LinearLayout
+        android:id="@+id/bottom_nav"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:background="#FCFCFC"
+        android:elevation="8dp">
+
+        <TextView
+            android:id="@+id/nav_home"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_home" />
+
+        <TextView
+            android:id="@+id/nav_record"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_record"
+            android:textColor="#4CAF50" />
+
+        <TextView
+            android:id="@+id/nav_check"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_check" />
+
+        <TextView
+            android:id="@+id/nav_mix"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_mix" />
+
+        <TextView
+            android:id="@+id/nav_my"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_my" />
+    </LinearLayout>
+
+</LinearLayout>

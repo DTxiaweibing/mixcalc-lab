@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="12dp"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/water_quality_record"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="#2d8c42"
+                android:gravity="center"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="12dp" />
+
+            <!-- 弧菌数 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_vibrio" android:labelFor="@+id/et_vibrio" />
+                <EditText android:id="@+id/et_vibrio" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <!-- 盐度 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_salinity" android:labelFor="@+id/et_salinity" />
+                <EditText android:id="@+id/et_salinity" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <!-- 氨氮 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_ammonia" android:labelFor="@+id/et_ammonia" />
+                <EditText android:id="@+id/et_ammonia" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <!-- 亚硝酸盐 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_nitrite" android:labelFor="@+id/et_nitrite" />
+                <EditText android:id="@+id/et_nitrite" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <!-- pH值 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_ph" android:labelFor="@+id/et_ph" />
+                <EditText android:id="@+id/et_ph" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <!-- 溶解氧 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_dissolved_oxygen" android:labelFor="@+id/et_dissolved_oxygen" />
+                <EditText android:id="@+id/et_dissolved_oxygen" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <!-- 最高水温 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_max_temp" android:labelFor="@+id/et_max_temp" />
+                <EditText android:id="@+id/et_max_temp" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <!-- 最低水温 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_min_temp" android:labelFor="@+id/et_min_temp" />
+                <EditText android:id="@+id/et_min_temp" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <!-- 余氯 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_chlorine" android:labelFor="@+id/et_chlorine" />
+                <EditText android:id="@+id/et_chlorine" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <!-- 硫化氢 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_hydrogen_sulfide" android:labelFor="@+id/et_hydrogen_sulfide" />
+                <EditText android:id="@+id/et_hydrogen_sulfide" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <!-- 氧化还原电位 -->
+            <LinearLayout style="@style/WaterItemRow">
+                <TextView style="@style/WaterItemLabel" android:text="@string/water_orp" android:labelFor="@+id/et_orp" />
+                <EditText android:id="@+id/et_orp" style="@style/WaterItemInput" android:autofillHints="" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="16dp">
+
+                <Button
+                    android:id="@+id/btn_clear"
+                    style="?android:attr/borderlessButtonStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:text="@string/btn_clear"
+                    android:textColor="#FF0000"
+                    android:textSize="16sp"
+                    android:background="@drawable/bg_button_clear" />
+
+                <Button
+                    android:id="@+id/btn_save"
+                    style="?android:attr/borderlessButtonStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp"
+                    android:text="@string/btn_save_record"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:background="@drawable/bg_button_green" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- 底部导航栏 -->
+    <LinearLayout
+        android:id="@+id/bottom_nav"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:background="#FCFCFC"
+        android:elevation="8dp">
+
+        <TextView
+            android:id="@+id/nav_home"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_home" />
+
+        <TextView
+            android:id="@+id/nav_record"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_record"
+            android:textColor="#4CAF50" />
+
+        <TextView
+            android:id="@+id/nav_check"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_check" />
+
+        <TextView
+            android:id="@+id/nav_mix"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_mix" />
+
+        <TextView
+            android:id="@+id/nav_my"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_my" />
+    </LinearLayout>
+
+</LinearLayout>

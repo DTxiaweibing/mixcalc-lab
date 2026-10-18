@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 洋红色背景 -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#FF960018" /> <!-- 您原来的颜色 -->
+        </shape>
+    </item>
+
+    <!-- 黑色边框 -->
+    <item>
+        <shape android:shape="rectangle">
+            <stroke 
+                android:width="0.5dp" 
+                android:color="#FF000000" /> <!-- 黑色边框 -->
+        </shape>
+    </item>
+</layer-list>

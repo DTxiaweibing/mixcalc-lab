@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#F5F5F5">
+
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="#4CAF50"
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+        app:titleTextColor="#FFFFFF" />
+
+    <ListView
+        android:id="@+id/list_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="#E0E0E0"
+        android:dividerHeight="1dp" />
+
+    <Button
+        android:id="@+id/btn_add_batch"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="#4CAF50"
+        android:text="@string/btn_add_batch"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <!-- 底部导航栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:background="#FFFFFFFF"
+        android:elevation="4dp">
+
+        <TextView android:id="@+id/nav_home" style="@style/BottomNavItem" android:text="@string/nav_home" />
+        <TextView android:id="@+id/nav_record" style="@style/BottomNavItem" android:text="@string/nav_record" />
+        <TextView android:id="@+id/nav_check" style="@style/BottomNavItem" android:text="@string/nav_check" />
+        <TextView android:id="@+id/nav_mix" style="@style/BottomNavItem" android:text="@string/nav_mix" />
+        <TextView android:id="@+id/nav_my" style="@style/BottomNavItem" android:text="@string/nav_my" />
+    </LinearLayout>
+
+</LinearLayout>

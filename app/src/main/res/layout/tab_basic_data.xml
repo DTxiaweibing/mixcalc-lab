@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- 做水日(拉漂白粉) -->
+        <LinearLayout style="@style/BasicDataRow">
+            <TextView style="@style/BasicDataLabel" android:text="@string/basic_data_water_prep" android:textColor="#FF4CAF50" />
+            <TextView
+                android:id="@+id/tv_water_prep_date"
+                style="@style/BasicDataInput"
+                android:clickable="true"
+                android:focusable="true"
+                android:text="@string/select_date"
+                android:textColor="#FF4CAF50"
+                android:textStyle="bold" />
+        </LinearLayout>
+        <View style="@style/DividerLine" />
+
+        <!-- 苗种数量(每池) -->
+        <LinearLayout style="@style/BasicDataRow">
+            <TextView style="@style/BasicDataLabel" android:text="@string/basic_data_seed_quantity" android:labelFor="@+id/et_seed_quantity" />
+            <EditText
+                android:id="@+id/et_seed_quantity"
+                style="@style/BasicDataInput"
+                android:inputType="number"
+                android:autofillHints="" />
+        </LinearLayout>
+        <View style="@style/DividerLine" />
+
+        <!-- 苗种品牌 -->
+        <LinearLayout style="@style/BasicDataRow">
+            <TextView style="@style/BasicDataLabel" android:text="@string/basic_data_seed_brand" android:labelFor="@+id/et_seed_brand" />
+            <EditText
+                android:id="@+id/et_seed_brand"
+                style="@style/BasicDataInput"
+                android:inputType="text"
+                android:maxLength="20"
+                android:autofillHints="" />
+        </LinearLayout>
+        <View style="@style/DividerLine" />
+
+        <!-- 放苗日期 -->
+        <LinearLayout style="@style/BasicDataRow">
+            <TextView style="@style/BasicDataLabel" android:text="@string/basic_data_stocking_date" />
+            <TextView
+                android:id="@+id/tv_stocking_date"
+                style="@style/BasicDataInput"
+                android:clickable="true"
+                android:focusable="true"
+                android:text="@string/select_date"
+                android:textStyle="bold" />
+        </LinearLayout>
+        <View style="@style/DividerLine" />
+
+        <!-- 饲料品牌 -->
+        <LinearLayout style="@style/BasicDataRow">
+            <TextView style="@style/BasicDataLabel" android:text="@string/basic_data_feed_brand" android:labelFor="@+id/et_feed_brand" />
+            <EditText
+                android:id="@+id/et_feed_brand"
+                style="@style/BasicDataInput"
+                android:inputType="text"
+                android:autofillHints="" />
+        </LinearLayout>
+        <View style="@style/DividerLine" />
+
+        <!-- 池塘数量 -->
+        <LinearLayout style="@style/BasicDataRow">
+            <TextView style="@style/BasicDataLabel" android:text="@string/basic_data_pond_count" android:labelFor="@+id/et_pond_count" />
+            <EditText
+                android:id="@+id/et_pond_count"
+                style="@style/BasicDataInput"
+                android:inputType="number"
+                android:autofillHints="" />
+        </LinearLayout>
+        <View style="@style/DividerLine" />
+
+        <!-- 池塘长度(米) -->
+        <LinearLayout style="@style/BasicDataRow">
+            <TextView style="@style/BasicDataLabel" android:text="@string/basic_data_pond_length" android:labelFor="@+id/et_pond_length" />
+            <EditText
+                android:id="@+id/et_pond_length"
+                style="@style/BasicDataInput"
+                android:inputType="numberDecimal"
+                android:autofillHints="" />
+        </LinearLayout>
+        <View style="@style/DividerLine" />
+
+        <!-- 气头数量 -->
+        <LinearLayout style="@style/BasicDataRow">
+            <TextView style="@style/BasicDataLabel" android:text="@string/basic_data_aerator_count" android:labelFor="@+id/et_aerator_count" />
+            <EditText
+                android:id="@+id/et_aerator_count"
+                style="@style/BasicDataInput"
+                android:inputType="number"
+                android:autofillHints="" />
+        </LinearLayout>
+        <View style="@style/DividerLine" />
+
+        <!-- 增氧功率 -->
+        <LinearLayout style="@style/BasicDataRow">
+            <TextView style="@style/BasicDataLabel" android:text="@string/basic_data_aeration_power" android:labelFor="@+id/et_aeration_power" />
+            <EditText
+                android:id="@+id/et_aeration_power"
+                style="@style/BasicDataInput"
+                android:inputType="numberDecimal"
+                android:autofillHints="" />
+        </LinearLayout>
+        <View style="@style/DividerLine" />
+
+    </LinearLayout>
+</ScrollView>

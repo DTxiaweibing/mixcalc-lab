@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="混料计算器沙盒"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        tools:targetApi="31"
+        tools:ignore="LockedOrientationActivity">
+
+        <activity
+            android:name=".MainActivity"
+            android:theme="@android:style/Theme.NoTitleBar"
+            android:label="混料计算器沙盒"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".mixcalc.MixCalcActivity"
+            android:theme="@style/AppTheme.NoWindowBackground"
+            android:label="混料计算器"
+            android:screenOrientation="portrait"
+            android:exported="false" />
+
+        <activity
+            android:name=".BasicDataActivity"
+            android:label="基础数据"
+            android:screenOrientation="portrait"
+            android:exported="false" />
+
+        <activity
+            android:name=".BatchManageActivity"
+            android:label="批次管理"
+            android:screenOrientation="portrait"
+            android:exported="false" />
+
+        <activity
+            android:name=".checkfeed.CheckFeedActivity"
+            android:label="巡塘"
+            android:screenOrientation="portrait"
+            android:exported="false" />
+
+    </application>
+</manifest>

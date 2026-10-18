@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:baselineAligned="false"
+    android:gravity="center_vertical"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp"
+    android:background="?attr/selectableItemBackground">
+
+    <!-- 从 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/rule_from"
+        android:textSize="19sp"
+        android:labelFor="@+id/et_start_day" />
+
+    <!-- X（可输入3位） -->
+    <EditText
+        android:id="@+id/et_start_day"
+        android:layout_width="0dp"
+        android:layout_weight="1.2"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:gravity="center"
+        android:text="@string/default_rule_value"
+        android:textSize="19sp"
+        android:maxLength="3"
+        android:minWidth="50dp"
+        android:padding="4dp"
+        android:autofillHints="" />
+
+    <!-- 天到 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/rule_day_to"
+        android:textSize="19sp"
+        android:labelFor="@+id/et_end_day" />
+
+    <!-- Y（可输入3位） -->
+    <EditText
+        android:id="@+id/et_end_day"
+        android:layout_width="0dp"
+        android:layout_weight="1.2"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:gravity="center"
+        android:text="@string/default_rule_value"
+        android:textSize="19sp"
+        android:maxLength="3"
+        android:minWidth="50dp"
+        android:padding="4dp"
+        android:autofillHints="" />
+
+    <!-- 天 每（合并） -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/rule_day_every"
+        android:textSize="19sp"
+        android:labelFor="@+id/et_interval" />
+
+    <!-- A（可输入3位） -->
+    <EditText
+        android:id="@+id/et_interval"
+        android:layout_width="0dp"
+        android:layout_weight="1.2"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:gravity="center"
+        android:text="@string/default_rule_value"
+        android:textSize="19sp"
+        android:maxLength="3"
+        android:minWidth="50dp"
+        android:padding="4dp"
+        android:autofillHints="" />
+
+    <!-- 单位 TextView -->
+    <TextView
+        android:id="@+id/tv_unit"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/rule_day_unit"
+        android:textSize="19sp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- B（只能输入1位） -->
+    <EditText
+        android:id="@+id/et_times"
+        android:layout_width="0dp"
+        android:layout_weight="0.6"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:gravity="center"
+        android:text="@string/default_rule_value"
+        android:textSize="19sp"
+        android:maxLength="1"
+        android:minWidth="40dp"
+        android:padding="4dp"
+        android:hint="@string/hint_rule_times"
+        android:autofillHints="" />
+
+    <!-- 次 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/rule_times_unit"
+        android:textSize="19sp" />
+
+    <!-- 删除按钮 -->
+    <ImageView
+        android:id="@+id/iv_delete_rule"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:contentDescription="@null"
+        android:src="@android:drawable/ic_menu_delete"
+        android:padding="4dp"
+        app:tint="#FF4444" />
+
+</LinearLayout>

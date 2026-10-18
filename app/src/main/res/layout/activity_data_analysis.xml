@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- 标题栏 -->
+    <LinearLayout
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="#2D8C42"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/title_data_analysis"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_batch_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/current_batch"
+            android:textColor="#E0F2E0"
+            android:textSize="20sp" />
+    </LinearLayout>
+
+    <!-- Tab 切换栏 -->
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tab_layout"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="#FFFFFF"
+        app:tabIndicatorColor="#2D8C42"
+        app:tabIndicatorHeight="3dp"
+        app:tabSelectedTextColor="#2D8C42"
+        app:tabTextColor="#666666"
+        app:tabTextAppearance="@android:style/TextAppearance.Widget.TabWidget"
+        android:elevation="2dp" />
+
+    <!-- 时间段选择栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:background="#FFFFFF"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:gravity="center_vertical"
+        android:layout_marginTop="1dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/icon_calendar"
+            android:textSize="20sp"
+            android:layout_marginEnd="8dp" />
+
+        <Spinner
+            android:id="@+id/spinner_date_range"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_spinner"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
+
+        <Button
+            android:id="@+id/btn_custom_date"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:text="@string/custom_date"
+            android:textSize="14sp"
+            android:background="@drawable/bg_button_secondary"
+            android:textColor="#2D8C42"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
+    </LinearLayout>
+
+    <!-- ViewPager 用于承载三个 Fragment -->
+    <androidx.viewpager.widget.ViewPager
+        android:id="@+id/view_pager"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- 底部导航栏 -->
+    <LinearLayout
+        android:id="@+id/bottom_nav"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:background="#FFFFFF"
+        android:elevation="8dp">
+
+        <TextView
+            android:id="@+id/nav_home"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_home" />
+
+        <TextView
+            android:id="@+id/nav_record"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_record" />
+
+        <TextView
+            android:id="@+id/nav_check"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_check" />
+
+        <TextView
+            android:id="@+id/nav_mix"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_mix" />
+
+        <TextView
+            android:id="@+id/nav_my"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_my"
+            android:textColor="#4CAF50" />
+    </LinearLayout>
+
+</LinearLayout>

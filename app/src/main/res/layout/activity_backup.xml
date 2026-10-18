@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FFF5F5F5">
+
+    <TextView
+        android:id="@+id/tv_backup_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="12dp"
+        android:paddingBottom="4dp"
+        android:text="@string/backup_ready"
+        android:textSize="14sp"
+        android:textColor="#FF888888" />
+
+    <Button
+        android:id="@+id/btn_local_backup"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="4dp"
+        android:text="@string/backup_to_local"
+        android:textSize="15sp"
+        android:textColor="#FFFFFFFF"
+        android:background="#FFFB6D0F" />
+
+    <!-- 坚果云配置区域：未连接时显示输入框，连接后收起为状态行 -->
+    <LinearLayout
+        android:id="@+id/layout_webdav_config"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="12dp"
+        android:layout_marginTop="0dp"
+        android:orientation="vertical"
+        android:background="#FFFFFFFF"
+        android:padding="12dp"
+        android:visibility="visible">
+
+        <TextView
+            android:id="@+id/tv_webdav_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/webdav_config_title"
+            android:textSize="13sp"
+            android:textColor="#FF888888"
+            android:gravity="center"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/et_webdav_username"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:hint="@string/hint_webdav_username"
+            android:inputType="textEmailAddress"
+            android:textSize="14sp"
+            android:padding="8dp"
+            android:background="@drawable/bg_dialog"
+            android:autofillHints="emailAddress" />
+
+        <EditText
+            android:id="@+id/et_webdav_password"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="8dp"
+            android:hint="@string/hint_webdav_password"
+            android:inputType="textPassword"
+            android:textSize="14sp"
+            android:padding="8dp"
+            android:background="@drawable/bg_dialog"
+            android:autofillHints="password" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/webdav_password_note"
+            android:textSize="11sp"
+            android:textColor="#FF888888" />
+
+        <Button
+            android:id="@+id/btn_webdav_connect"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="8dp"
+            android:text="@string/webdav_test_and_save"
+            android:textSize="14sp"
+            android:textColor="#FFFFFFFF"
+            android:background="#FF1677FF" />
+
+    </LinearLayout>
+
+    <!-- 已连接状态行（连接后显示） -->
+    <LinearLayout
+        android:id="@+id/layout_webdav_connected"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="4dp"
+        android:orientation="horizontal"
+        android:background="#FFFFFFFF"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/webdav_connected"
+            android:textSize="14sp"
+            android:textColor="#FF4CAF50"
+            android:gravity="center_vertical" />
+
+        <Button
+            android:id="@+id/btn_webdav_upload"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="@string/backup"
+            android:textSize="13sp"
+            android:textColor="#FFFFFFFF"
+            android:background="#FF0C8918" />
+
+        <Button
+            android:id="@+id/btn_webdav_disconnect"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="4dp"
+            android:text="@string/disconnect"
+            android:textSize="13sp"
+            android:textColor="#FFFF4444"
+            android:background="@drawable/bg_dialog" />
+
+    </LinearLayout>
+
+    <!-- 切换标签：本地恢复 / 坚果云恢复 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="0dp">
+
+        <Button
+            android:id="@+id/btn_tab_local"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="@string/restore_from_local"
+            android:textSize="14sp"
+            android:textColor="#FFFFFFFF"
+            android:background="#FF444444" />
+
+        <Button
+            android:id="@+id/btn_tab_cloud"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="@string/restore_from_webdav"
+            android:textSize="14sp"
+            android:textColor="#FF888888"
+            android:background="@drawable/bg_dialog" />
+
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv_list_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="4dp"
+        android:text="@string/backup_file_list_title"
+        android:textSize="13sp"
+        android:textColor="#FF444444"
+        android:textStyle="bold" />
+
+    <ListView
+        android:id="@+id/lv_backup_history"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:background="#FFFFFFFF" />
+
+</LinearLayout>

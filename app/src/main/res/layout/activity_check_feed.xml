@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="false">
+
+    <!-- 固定头部区域 (总高度160dp，4行×40dp=160dp) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="160dp"
+        android:orientation="vertical"
+        android:background="#f5f5f5">
+
+        <!-- 标题行 (40dp) - 修改为对称布局 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:background="#2d8c42"
+            android:weightSum="100">
+
+            <!-- 左侧差值显示 (宽度20%) -->
+            <TextView
+                android:id="@+id/tv_time_diff"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="20"
+                android:text="@string/default_time_placeholder"
+                android:textSize="13sp"
+                android:textColor="#FFFFFF"
+                android:background="#2d8c42"
+                android:gravity="center"
+                android:singleLine="true"
+                android:textStyle="bold" />
+
+            <!-- 中间标题文本 (宽度55%) -->
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="60"
+                android:gravity="center"
+                android:text="@string/title_check_feed"
+                android:textSize="20sp"
+                android:textColor="#FFFFFF"
+                android:background="#2d8c42"
+                android:textStyle="bold" />
+
+            <!-- 右侧标准用时显示 (宽度20%) -->
+            <TextView
+                android:id="@+id/tv_time_standard"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="20"
+                android:text="@string/default_standard_placeholder"
+                android:textSize="13sp"
+                android:textColor="#FFFFFF"
+                android:background="#2d8c42"
+                android:gravity="center"
+                android:singleLine="true"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- 第二行 (40dp) - 保持不变 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:weightSum="100">
+
+            <Button
+                android:id="@+id/btn_back_to_mix"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="15"
+                android:text="@string/btn_back_to_mix"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:background="#000042"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btn_clear"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="15"
+                android:text="@string/btn_clear"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:background="#960018"
+                android:textColor="#FFFFFF" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="35"
+                android:gravity="center"
+                android:text="@string/label_start_time"
+                android:textSize="14sp"
+                android:textColor="#000000"
+                android:background="@drawable/cell_border"
+                android:textStyle="bold"
+                android:labelFor="@+id/et_start_time" />
+
+            <EditText
+                android:id="@+id/et_start_time"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="35"
+                android:gravity="center"
+                android:textSize="14sp"
+                android:textColor="#000000"
+                android:background="@drawable/cell_border"
+                android:inputType="time"
+                android:autofillHints="" />
+        </LinearLayout>
+
+        <!-- 第三行 (40dp) - 保持不变 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:weightSum="100">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="15"
+                android:gravity="center"
+                android:text="@string/label_shed_count"
+                android:textSize="14sp"
+                android:textColor="#000000"
+                android:background="@drawable/cell_border"
+                android:textStyle="bold"
+                android:labelFor="@+id/et_shed_count" />
+
+            <EditText
+                android:id="@+id/et_shed_count"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="15"
+                android:gravity="center"
+                android:hint="@string/hint_shed_count"
+                android:textSize="14sp"
+                android:textColor="#000000"
+                android:background="@drawable/cell_border"
+                android:inputType="number"
+                android:autofillHints="" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="35"
+                android:gravity="center"
+                android:text="@string/label_end_time"
+                android:textSize="14sp"
+                android:textColor="#000000"
+                android:background="@drawable/cell_border"
+                android:textStyle="bold"
+                android:labelFor="@+id/et_end_time" />
+
+            <EditText
+                android:id="@+id/et_end_time"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="35"
+                android:gravity="center"
+                android:textSize="14sp"
+                android:textColor="#000000"
+                android:background="@drawable/cell_border"
+                android:inputType="time"
+                android:autofillHints="" />
+        </LinearLayout>
+
+        <!-- 第四行 (40dp) - 保持不变 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:weightSum="100">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="15"
+                android:gravity="center"
+                android:text="@string/label_shed_number"
+                android:textSize="14sp"
+                android:textColor="#000000"
+                android:background="@drawable/cell_border"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btn_confirm"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="15"
+                android:text="@string/btn_confirm"
+                android:textSize="14sp"
+                android:background="@drawable/cell_border"
+                android:textColor="#000000" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="35"
+                android:gravity="center"
+                android:text="@string/label_check_time"
+                android:textSize="14sp"
+                android:textColor="#000000"
+                android:background="@drawable/cell_border"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_feeding_duration"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="35"
+                android:gravity="center"
+                android:text="@string/label_feeding_duration"
+                android:textSize="14sp"
+                android:textColor="#000000"
+                android:background="@drawable/cell_border"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 表格区域 (可滚动部分，占据剩余空间) -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:id="@+id/table_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+    
+    <!-- 底部导航栏 -->
+    <LinearLayout
+        android:id="@+id/bottom_nav"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:background="#FFFFFF"
+        android:elevation="8dp">
+
+        <TextView
+            android:id="@+id/nav_home"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_home" />
+
+        <TextView
+            android:id="@+id/nav_record"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_record" />
+
+        <TextView
+            android:id="@+id/nav_check"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_check"
+            android:textColor="#4CAF50" />
+
+        <TextView
+            android:id="@+id/nav_mix"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_mix" />
+
+        <TextView
+            android:id="@+id/nav_my"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_my" />
+    </LinearLayout>
+    
+</LinearLayout>
+

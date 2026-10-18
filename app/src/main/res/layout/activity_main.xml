@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.drawerlayout.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/drawer_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- 主内容区域（FrameLayout 包裹，用于叠加浮动层） -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FFFFFF">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <!-- 标题栏（含抽屉菜单按钮） -->
+            <androidx.appcompat.widget.Toolbar
+                android:id="@+id/toolbar"
+                android:layout_width="match_parent"
+                android:layout_height="?attr/actionBarSize"
+                android:background="#FFFFFF"
+                android:theme="@style/ThemeOverlay.AppCompat.ActionBar"
+                app:titleTextColor="#000000" />
+
+            <!-- 广告轮播区域 -->
+            <androidx.viewpager.widget.ViewPager
+                android:id="@+id/vp_banner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#F5F5F5" />
+
+            <!-- 功能网格区域 -->
+            <GridView
+                android:id="@+id/gv_functions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:numColumns="4"
+                android:padding="10dp"
+                android:verticalSpacing="2dp"
+                android:horizontalSpacing="6dp"
+                android:stretchMode="columnWidth"
+                android:gravity="top|center_horizontal"
+                android:listSelector="@android:color/transparent" />
+
+            <!-- 任务区域（网格与底导之间，权重1份） -->
+            <ScrollView
+                android:id="@+id/scroll_task_bars"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:scrollbars="none"
+                android:fillViewport="true"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/layout_task_bars"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="bottom" />
+
+            </ScrollView>
+
+            <!-- 底部导航栏 -->
+            <LinearLayout
+                android:id="@+id/bottom_nav"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:orientation="horizontal"
+                android:background="#FFFFFF"
+                android:elevation="8dp">
+
+                <TextView
+                    android:id="@+id/nav_home"
+                    style="@style/BottomNavItem"
+            android:text="@string/nav_home"
+            android:textColor="#4CAF50" />
+
+                <TextView
+                    android:id="@+id/nav_record"
+                    style="@style/BottomNavItem"
+                    android:text="@string/nav_record" />
+
+                <TextView
+                    android:id="@+id/nav_check"
+                    style="@style/BottomNavItem"
+                    android:text="@string/nav_check" />
+
+                <TextView
+                    android:id="@+id/nav_mix"
+                    style="@style/BottomNavItem"
+                    android:text="@string/nav_mix" />
+
+                <TextView
+                    android:id="@+id/nav_my"
+                    style="@style/BottomNavItem"
+                    android:text="@string/nav_my" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 浮动提醒条层（悬浮在整个主内容上方，透明背景，可滚动） -->
+        <ScrollView
+            android:id="@+id/layout_alert_bars"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:visibility="gone"
+            android:elevation="8dp">
+
+            <LinearLayout
+                android:id="@+id/alert_bars_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+        </ScrollView>
+
+    </FrameLayout>
+
+    <!-- 侧滑菜单 -->
+    <com.google.android.material.navigation.NavigationView
+        android:id="@+id/nav_view"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:minWidth="140dp"
+        android:maxWidth="240dp"
+        android:background="#FFFFFF"
+        app:headerLayout="@layout/nav_header"
+        app:menu="@menu/menu_drawer"
+        app:itemTextAppearance="@style/DrawerMenuItemText" />
+
+</androidx.drawerlayout.widget.DrawerLayout>

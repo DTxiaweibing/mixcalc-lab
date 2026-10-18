@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/main_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#f5f5f5">
+
+    <!-- 顶部标题 - 左20%空白 + 中60%标题 + 右20%误差 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/title_height"
+        android:orientation="horizontal"
+        android:background="#2d8c42">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0.2"
+            android:gravity="start|center_vertical"
+            android:paddingStart="8dp">
+
+            <ImageView
+                android:id="@+id/btn_column_settings"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_gravity="center_vertical"
+                android:src="@drawable/ic_settings"
+                android:tint="#FFFFFF"
+                android:scaleType="fitCenter"
+                android:background="@null"
+                android:contentDescription="@string/menu_settings"
+                android:clickable="true"
+                android:focusable="true" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/toolbar"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0.6"
+            android:gravity="center"
+            android:text="@string/title_mix_calculator"
+            android:textSize="@dimen/title_text_size"
+            android:textColor="#FFFFFF" />
+
+        <TextView
+            android:id="@+id/tv_error_display"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0.2"
+            android:gravity="center"
+            android:textSize="@dimen/title_text_size"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+    <!-- 表头区域 -->
+    <LinearLayout
+        android:id="@+id/header_container"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"  
+        android:orientation="horizontal"
+        android:baselineAligned="false"
+        android:background="#e8f5e9">
+
+        <!-- 固定列表头（左侧） -->
+        <LinearLayout
+            android:id="@+id/fixed_header_container"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:background="#e8f5e9">
+            <!-- 序号列始终固定，已在XML中定义 -->
+        </LinearLayout>
+
+        <!-- 可水平滚动的表头区域（右侧） -->
+        <HorizontalScrollView
+            android:id="@+id/header_scroll_view"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:scrollbars="none"> <!-- 禁用滚动条 -->
+
+            <LinearLayout
+                android:id="@+id/header_scroll_content"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal">
+                <!-- 非固定列的表头会动态添加 -->
+            </LinearLayout>
+        </HorizontalScrollView>
+    </LinearLayout>
+
+    <!-- 数据区域 -->
+    <ScrollView
+        android:id="@+id/vertical_scroll_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="vertical">
+
+        <LinearLayout
+            android:id="@+id/data_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:minHeight="400dp">
+            <!-- 数据行会动态添加，每行包含固定列和滚动列 -->
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- 底部统计区域 -->
+    <LinearLayout
+        android:id="@+id/footer_container"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"  
+        android:orientation="horizontal"
+        android:baselineAligned="false"
+        android:background="#f0f0f0">
+
+        <!-- 固定列统计（左侧） -->
+        <LinearLayout
+            android:id="@+id/fixed_footer_container"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:background="#f0f0f0">
+            <!-- 序号列统计动态添加 -->
+        </LinearLayout>
+
+        <!-- 可水平滚动的统计区域（右侧） -->
+        <HorizontalScrollView
+            android:id="@+id/footer_scroll_view"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:scrollbars="none"> <!-- 禁用滚动条 -->
+
+            <LinearLayout
+                android:id="@+id/footer_scroll_content"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal">
+                <!-- 非固定列的统计会动态添加 -->
+            </LinearLayout>
+        </HorizontalScrollView>
+    </LinearLayout>
+    <!-- 底部导航栏 -->
+    <LinearLayout
+        android:id="@+id/bottom_nav"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:background="#FFFFFF"
+        android:elevation="8dp">
+
+        <TextView
+            android:id="@+id/nav_home"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_home" />
+
+        <TextView
+            android:id="@+id/nav_record"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_record" />
+
+        <TextView
+            android:id="@+id/nav_check"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_check" />
+
+        <TextView
+            android:id="@+id/nav_mix"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_mix"
+            android:textColor="#4CAF50" />
+
+        <TextView
+            android:id="@+id/nav_my"
+            style="@style/BottomNavItem"
+            android:text="@string/nav_my" />
+    </LinearLayout>
+</LinearLayout>
+

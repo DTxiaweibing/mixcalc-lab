@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 淡绿色背景（与原cell_border_green.xml相同） -->
+    <solid android:color="#F0F8F0" />
+
+    <!-- 褐色边框，3dp（改为褐色粗边框） -->
+    <stroke 
+        android:width="3dp" 
+        android:color="#FF6E511E" />
+
+    <!-- 圆角（可选） -->
+    <corners 
+        android:radius="0dp" />
+
+    <!-- 内边距 -->
+    <padding 
+        android:left="0dp"
+        android:top="0dp"
+        android:right="0dp"
+        android:bottom="0dp" />
+</shape>

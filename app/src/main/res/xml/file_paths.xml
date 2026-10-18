@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 导出的进货单 HTML 临时文件，供分享/打开使用 -->
+    <cache-path
+        name="po_export"
+        path="po_export/" />
+    <external-files-path
+        name="po_downloads"
+        path="Download/" />
+</paths>
