@@ -1,48 +1,31 @@
 package com.shrimpfarm.app.mixcalc;
 
-import android.annotation.SuppressLint;
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
-import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
-import android.text.Editable;
 import android.text.InputType;
-import android.text.TextWatcher;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
-import android.view.KeyEvent;
 import android.view.LayoutInflater;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewParent;
-import android.view.ViewTreeObserver;
-import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.EditText;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.ScrollView;
-import android.widget.TextView;
 import android.widget.PopupWindow;
+import android.widget.TextView;
 import android.widget.Toast;
-
-import androidx.core.content.ContextCompat;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 import com.shrimpfarm.app.BaseActivity;
 import com.shrimpfarm.app.BasicDataActivity;
@@ -51,6 +34,13 @@ import com.shrimpfarm.app.DatabaseHelper;
 import com.shrimpfarm.app.R;
 import com.shrimpfarm.app.checkfeed.CheckFeedActivity;
 import com.shrimpfarm.app.mixcalc.model.FeedData;
+import com.shrimpfarm.app.mixcalc.table.CellStyle;
+import com.shrimpfarm.app.mixcalc.table.CellTextProvider;
+import com.shrimpfarm.app.mixcalc.table.MixCalcTableView;
+import com.shrimpfarm.app.mixcalc.table.OnCellEditListener;
+import com.shrimpfarm.app.mixcalc.table.OnCellTapListener;
+import com.shrimpfarm.app.mixcalc.table.TableColumn;
+import com.shrimpfarm.app.mixcalc.table.TableColumnConfig;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -59,7 +49,6 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -80,20 +69,12 @@ public class MixCalcActivity extends BaseActivity {
     private static final String KEY_SHED_COUNT_LIMIT = "shed_count_limit";
 
     // 视图组件
-    private LinearLayout dataContent;
-    private LinearLayout headerScrollContent;
-    private LinearLayout footerScrollContent;
-    private LinearLayout fixedHeaderContainer;
-    private LinearLayout fixedFooterContainer;
-    private HorizontalScrollView headerScrollView;
-    private HorizontalScrollView footerScrollView;
-    private ScrollView verticalScrollView;
+    private MixCalcTableView table;
+    private TableColumnConfig tableConfig;
+    private TextView tvErrorDisplay;
 
     // 数据
     private List<FeedData> dataList;
-    private List<HorizontalScrollView> rowScrollViews;
-    private List<LinearLayout> fixedDataRows;
-    private HashSet<String> listenersAddedSet = new HashSet<>();
     private int globalWaterPercentage = 20;
 
     // 发酵料计算标志
@@ -103,16 +84,10 @@ public class MixCalcActivity extends BaseActivity {
     // 棚数限制相关变量
     private int shedCountLimit = 0;
     private boolean isShedCountExceeded = false;
-    private Drawable normalShedCountBg;
-    private Drawable warningShedCountBg;
-
-    // 懒加载相关变量
-    private int screenVisibleRows = 10;
-    private int currentlyLoadedRows = 0;
 
     // 列管理
-    private Map<String, Boolean> columnVisibility = new HashMap<String, Boolean>();
-    private Map<String, Boolean> columnFixed = new HashMap<String, Boolean>();
+    private final Map<String, Boolean> columnVisibility = new HashMap<String, Boolean>();
+    private final Map<String, Boolean> columnFixed = new HashMap<String, Boolean>();
     private PopupWindow columnSettingsPopup;
     private final String[] columnIds = {
         "seq", "shed_number", "shed_count", "average_feed", 
@@ -128,49 +103,192 @@ public class MixCalcActivity extends BaseActivity {
     private boolean isTabletMode = false;
     private int[] adaptiveColumnWidths;
 
-    // 当前滚动位置
-    private int currentScrollX = 0;
-
-    // 防止递归调用标志
-    private boolean isSyncing = false;
-
-    // 防止平均格程序化更新触发监听器（递归）标志
-    private boolean isUpdatingAverageCell = false;
+    // 表尾统计值（由 updateFooterRow 填充，绘制时读取）
+    private final Map<String, Double> footerTotals = new HashMap<>();
 
     // 非发酵料列（按粒径由小到大），换料比例只在这几种料之间生效
     private static final String[] NF_FEED_COLUMNS = {"powder", "feed03", "feed05", "feed10"};
 
-    // 触摸事件相关
-    private float lastX, lastY;
-    private boolean isHorizontalScroll = false;
-
-    // 滚动监听器列表
-    private List<ViewTreeObserver.OnScrollChangedListener> scrollListeners = new ArrayList<>();
-
-    // 单元格映射
-    private Map<String, View> cellViewMap = new HashMap<>();
-
-    // 数据行容器映射
-    private Map<Integer, LinearLayout> rowLayoutMap = new HashMap<>();
-
-    // 统计行单元格映射
-    private Map<String, TextView> footerCellMap = new HashMap<>();
-
-    // 新增：数据是否已加载标志
-    private boolean isDataLoaded = false;
-
     // 总数据行数
     private static final int TOTAL_ROWS = 30;
-
-    // 序号列统计行View引用
-    private TextView seqStatTextView;
-
-    // 标题栏误差显示
-    private TextView tvErrorDisplay;
 
     // 批次与数据库相关
     private String currentBatchId;
     private DatabaseHelper dbHelper;
+
+    // ==================== 自绘引擎提供者 ====================
+
+    private final CellTextProvider textProvider = new CellTextProvider() {
+        @Override
+        public String getHeaderText(String columnId) {
+            if ("average_feed".equals(columnId)) {
+                return getString(R.string.mix_col_avg_feed);
+            }
+            if ("water".equals(columnId)) {
+                return getString(R.string.water_percentage_header, globalWaterPercentage);
+            }
+            int idx = getColumnIndex(columnId);
+            return (idx >= 0 && columnNames != null) ? columnNames[idx] : "";
+        }
+
+        @Override
+        public int getHeaderState(String columnId) {
+            if (!"fermented".equals(columnId)) {
+                return CellStyle.HEADER_NORMAL;
+            }
+            if (fermentedIncludedInAverage) {
+                return fermentedIncludedInWater
+                        ? CellStyle.HEADER_FERMENTED_GREEN_BROWN
+                        : CellStyle.HEADER_FERMENTED_GRAY_BROWN;
+            }
+            return fermentedIncludedInWater
+                    ? CellStyle.HEADER_FERMENTED_GREEN
+                    : CellStyle.HEADER_FERMENTED_GRAY;
+        }
+
+        @Override
+        public String getCellText(int row, String columnId) {
+            FeedData data = getData(row);
+            if (data == null) {
+                return "";
+            }
+            switch (columnId) {
+                case "seq":
+                    return String.valueOf(row + 1);
+                case "shed_number":
+                    return data.getShedNumber();
+                case "water":
+                case "average_feed":
+                case "weighed_feed":
+                    return getCellDisplayValue(data, columnId);
+                default:
+                    return getCellInitialValue(data, columnId);
+            }
+        }
+
+        @Override
+        public int getCellState(int row, String columnId) {
+            FeedData data = getData(row);
+            if (data == null) {
+                return CellStyle.STATE_NORMAL;
+            }
+            if ("shed_count".equals(columnId)
+                    && data.getShedCount() > 0 && isShedCountExceeded) {
+                return CellStyle.STATE_WARNING;
+            }
+            if (isEditableColumn(columnId)
+                    && !"average_feed".equals(columnId)
+                    && !isCellEnabled(columnId, data, row)) {
+                return CellStyle.STATE_DISABLED;
+            }
+            if (isCellEnabled(columnId, data, row) && isSwitchRatioCell(data, columnId)) {
+                return CellStyle.STATE_HIGHLIGHT;
+            }
+            return CellStyle.STATE_NORMAL;
+        }
+
+        @Override
+        public boolean isCellEditable(int row, String columnId) {
+            FeedData data = getData(row);
+            if (data == null || !isEditableColumn(columnId)) {
+                return false;
+            }
+            return isCellEnabled(columnId, data, row);
+        }
+
+        @Override
+        public String getFooterText(String columnId) {
+            if ("seq".equals(columnId)) {
+                return getString(R.string.seq_stat_format, getFilledRowCount(), TOTAL_ROWS);
+            }
+            if ("shed_number".equals(columnId)) {
+                return getString(R.string.mix_btn_go_check);
+            }
+            if ("weighed_feed".equals(columnId)) {
+                return getString(R.string.mix_btn_reset);
+            }
+            Double v = footerTotals.get(columnId);
+            double value = v == null ? 0 : v;
+            if (value == 0) {
+                return "0";
+            }
+            if (value == (int) value) {
+                return String.valueOf((int) value);
+            }
+            return String.format(Locale.ROOT, "%.2f", value);
+        }
+
+        @Override
+        public int getFooterStyle(String columnId) {
+            if ("shed_number".equals(columnId)) {
+                return CellStyle.FOOTER_BLUE;
+            }
+            if ("weighed_feed".equals(columnId)) {
+                return CellStyle.FOOTER_CARMINE;
+            }
+            return CellStyle.FOOTER_NORMAL;
+        }
+    };
+
+    private final OnCellTapListener tapListener = new OnCellTapListener() {
+        @Override
+        public void onCellClick(int row, String columnId) {
+            // 编辑由引擎的 beginEdit 处理，这里无需额外动作
+        }
+
+        @Override
+        public void onCellLongPress(int row, String columnId, Rect cellRect) {
+            FeedData data = getData(row);
+            if (data == null || !isNonFermentedFeedColumn(columnId)) {
+                return;
+            }
+            if (!isCellEnabled(columnId, data, row)) {
+                return;
+            }
+            String larger = getLargerNonFermentedColumn(data);
+            if (larger != null && larger.equals(columnId)) {
+                showSwitchRatioDrawer(data, cellRect);
+            }
+        }
+
+        @Override
+        public void onHeaderClick(String columnId) {
+            if ("water".equals(columnId)) {
+                showWaterPercentageDialog();
+            } else if ("fermented".equals(columnId)) {
+                showFermentedCalculationDialog();
+            }
+        }
+
+        @Override
+        public void onHeaderLongPress(String columnId, Rect cellRect) {
+            int idx = getColumnIndex(columnId);
+            if (idx >= 0) {
+                showColumnOperationMenu(idx, columnId);
+            }
+        }
+
+        @Override
+        public void onFooterClick(String columnId) {
+            if ("shed_number".equals(columnId)) {
+                prepareDataAndNavigate();
+            } else if ("weighed_feed".equals(columnId)) {
+                showResetConfirmationDialog();
+            }
+        }
+    };
+
+    private final OnCellEditListener editListener = new OnCellEditListener() {
+        @Override
+        public void onCellCommitted(int row, String columnId, String text) {
+            commitCell(row, columnId, text);
+        }
+
+        @Override
+        public void onEditNext(int row, String columnId) {
+            moveFocusToNextEditableCell(row, getColumnIndex(columnId));
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -204,30 +322,31 @@ public class MixCalcActivity extends BaseActivity {
             // 保存到 SharedPreferences 供内部使用
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putInt(KEY_SHED_COUNT_LIMIT, shedCountLimit).apply();
 
-            // ---------- 原有初始化 ----------
             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-            // 第1步：初始化视图（立即）
+            // 初始化视图
             initViews();
-
-            // 初始化列名
             initColumnNames();
-
-            // 初始化背景资源
-            normalShedCountBg = ContextCompat.getDrawable(this, R.drawable.cell_border);
-            warningShedCountBg = ContextCompat.getDrawable(this, R.drawable.cell_border_warning);
-
-            // 第2步：快速加载设置
             loadQuickSettings();
+            initTabletAdaptiveSettings();
 
-            // 第3步：计算屏幕能显示多少行
-            calculateScreenVisibleRows();
+            // 列可见 / 固定状态
+            initColumnVisibility();
+            initColumnFixedState();
+            loadColumnVisibility();
+            loadColumnFixedState();
 
-            // 第4步：延迟创建表格（允许UI先完成渲染，避免ANR）
-            new Handler().post(() -> {
-                buildEmptyTableWithoutListeners();
-                lazyInitializeListenersAndData();
-            });
+            // 装配自绘引擎
+            initData();
+            applyColumnConfig();
+            table.setCellTextProvider(textProvider);
+            table.setOnCellTapListener(tapListener);
+            table.setOnCellEditListener(editListener);
+            table.setRows(dataList);
+
+            // 加载已保存数据并计算
+            loadAllDataInBackground();
+            updateAllCalculations();
 
         } catch (Exception e) {
             Log.e(TAG, "启动异常: " + e.getMessage(), e);
@@ -265,39 +384,6 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 计算屏幕能显示多少行
-    private void calculateScreenVisibleRows() {
-        try {
-            DisplayMetrics metrics = getResources().getDisplayMetrics();
-            int screenHeight = metrics.heightPixels;
-
-            isTabletMode = isTabletDevice(this);
-
-            if (isTabletMode) {
-                screenVisibleRows = 25;
-            } else {
-                int rowHeight = dpToPx(40);
-                int statusBarHeight = getStatusBarHeight();
-                int headerHeight = dpToPx(40);
-                int footerHeight = dpToPx(40);
-                int availableHeight = screenHeight - statusBarHeight - headerHeight - footerHeight;
-                screenVisibleRows = (availableHeight / rowHeight) + 2;
-                screenVisibleRows = Math.max(5, Math.min(screenVisibleRows, 30));
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "计算可见行数异常", e);
-            screenVisibleRows = 15;
-        }
-    }
-
-    private int getStatusBarHeight() {
-        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(getWindow().getDecorView());
-        if (insets != null) {
-            return insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
-        }
-        return 0;
-    }
-
     private boolean isTabletDevice(Context context) {
         try {
             DisplayMetrics displayMetrics = context.getResources().getDisplayMetrics();
@@ -309,227 +395,6 @@ public class MixCalcActivity extends BaseActivity {
             Log.e(TAG, "检测平板设备异常: " + e.getMessage());
             return false;
         }
-    }
-
-    // 创建空表格（不带监听器）
-    private void buildEmptyTableWithoutListeners() {
-        try {
-            // 清理监听器记录
-            listenersAddedSet.clear();
-            
-            // 1. 初始化数据结构
-            initData();
-
-            // 2. 初始化列设置
-            initTabletAdaptiveSettings();
-            initColumnVisibility();
-            initColumnFixedState();
-            loadColumnVisibility();
-            loadColumnFixedState();
-
-            // 3. 构建表头和统计行
-            int scrollWidth = calculateScrollWidth();
-            buildHeader(scrollWidth);
-            buildFooter(scrollWidth);
-
-            // 4. 创建所有行的空表格
-            for (int i = 0; i < TOTAL_ROWS; i++) {
-                buildEmptyRowWithoutListeners(i, scrollWidth);
-                currentlyLoadedRows++;
-            }
-
-            // 5. 设置滚动同步
-            setupScrollSync();
-
-        } catch (Exception e) {
-            Log.e(TAG, "创建空表格异常", e);
-        }
-    }
-
-    // 创建空行（不带监听器）
-    private void buildEmptyRowWithoutListeners(final int rowIndex, int scrollWidth) {
-        LinearLayout rowLayout = new LinearLayout(this);
-        rowLayout.setOrientation(LinearLayout.HORIZONTAL);
-        rowLayout.setLayoutParams(new LinearLayout.LayoutParams(
-                                      LinearLayout.LayoutParams.MATCH_PARENT, 
-                                      dpToPx(40)
-                                  ));
-
-        LinearLayout fixedLayout = createFixedColumnsWithoutListeners(rowIndex);
-        rowLayout.addView(fixedLayout);
-
-        HorizontalScrollView scrollView = createScrollColumnsWithoutListeners(rowIndex, scrollWidth);
-        rowLayout.addView(scrollView);
-
-        dataContent.addView(rowLayout);
-
-        rowLayoutMap.put(rowIndex, rowLayout);
-        rowScrollViews.add(scrollView);
-        fixedDataRows.add(fixedLayout);
-    }
-
-    // 创建固定列（不带监听器）
-    private LinearLayout createFixedColumnsWithoutListeners(final int rowIndex) {
-        LinearLayout fixedLayout = new LinearLayout(this);
-        fixedLayout.setOrientation(LinearLayout.HORIZONTAL);
-
-        int fixedWidth = 0;
-
-        View seqView = createCellWithoutListeners("seq", rowIndex, 0);
-        fixedLayout.addView(seqView);
-        fixedWidth += adaptiveColumnWidths[0];
-
-        for (int i = 1; i < columnIds.length; i++) {
-            String columnId = columnIds[i];
-            boolean visible = columnVisibility.get(columnId);
-            boolean fixed = columnFixed.get(columnId);
-
-            if (visible && fixed) {
-                View cellView = createCellWithoutListeners(columnId, rowIndex, i);
-                fixedLayout.addView(cellView);
-                fixedWidth += adaptiveColumnWidths[i];
-            }
-        }
-
-        fixedLayout.setLayoutParams(new LinearLayout.LayoutParams(
-                                        fixedWidth,
-                                        dpToPx(40)
-                                    ));
-
-        return fixedLayout;
-    }
-
-    // 创建滚动列（不带监听器）
-    private HorizontalScrollView createScrollColumnsWithoutListeners(final int rowIndex, int scrollWidth) {
-        HorizontalScrollView scrollView = new HorizontalScrollView(this);
-        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
-                                       0,
-                                       dpToPx(40),
-                                       1.0f
-                                   ));
-        scrollView.setHorizontalScrollBarEnabled(false);
-        scrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-
-        LinearLayout scrollContent = new LinearLayout(this);
-        scrollContent.setOrientation(LinearLayout.HORIZONTAL);
-        scrollContent.setLayoutParams(new LinearLayout.LayoutParams(
-                                          scrollWidth,
-                                          dpToPx(40)
-                                      ));
-
-        for (int i = 0; i < columnIds.length; i++) {
-            String columnId = columnIds[i];
-            boolean visible = columnVisibility.get(columnId);
-            boolean fixed = columnFixed.get(columnId);
-
-            if (visible && !fixed) {
-                View cellView = createCellWithoutListeners(columnId, rowIndex, i);
-                scrollContent.addView(cellView);
-            }
-        }
-
-        scrollView.addView(scrollContent);
-        return scrollView;
-    }
-
-    // 创建不带监听器的单元格
-    private View createCellWithoutListeners(String columnId, int rowIndex, int columnIndex) {
-        boolean isEditable = isEditableColumn(columnId);
-
-        if (isEditable) {
-            EditText cellView = new EditText(this);
-            cellView.setLayoutParams(new LinearLayout.LayoutParams(
-                                         adaptiveColumnWidths[columnIndex],
-                                         dpToPx(40)
-                                     ));
-            cellView.setGravity(Gravity.CENTER);
-            cellView.setTextSize(12);
-            cellView.setTypeface(cellView.getTypeface(), android.graphics.Typeface.BOLD);
-            cellView.setBackgroundResource(R.drawable.cell_border);
-            cellView.setPadding(0, 0, 0, 0);
-            cellView.setSingleLine(true);
-            cellView.setTag(rowIndex + "_" + columnId);
-            cellView.setEnabled(false);
-            cellView.setImeOptions(EditorInfo.IME_ACTION_NEXT);
-
-            if ("shed_number".equals(columnId)) {
-                cellView.setInputType(InputType.TYPE_CLASS_TEXT);
-                cellView.setSingleLine(true);
-            } else {
-                cellView.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-            }
-
-            cellViewMap.put(rowIndex + "_" + columnId, cellView);
-            return cellView;
-        } else {
-            TextView cellView = new TextView(this);
-            cellView.setLayoutParams(new LinearLayout.LayoutParams(
-                                         adaptiveColumnWidths[columnIndex],
-                                         dpToPx(40)
-                                     ));
-            cellView.setGravity(Gravity.CENTER);
-            cellView.setTextSize(12);
-            cellView.setTypeface(cellView.getTypeface(), android.graphics.Typeface.BOLD);
-            cellView.setBackgroundResource(R.drawable.cell_border);
-            cellView.setPadding(0, 0, 0, 0);
-            cellView.setTag(rowIndex + "_" + columnId);
-            cellViewMap.put(rowIndex + "_" + columnId, cellView);
-
-            if ("seq".equals(columnId)) {
-                cellView.setText(String.valueOf(rowIndex + 1));
-                cellView.setTextColor(0xFF666666);
-            } else if ("shed_number".equals(columnId)) {
-                cellView.setText(getString(R.string.shed_number_format, rowIndex + 1));
-                cellView.setTextColor(Color.BLACK);
-                cellView.setSingleLine(true);
-            } else {
-                cellView.setText("");
-            }
-
-            return cellView;
-        }
-    }
-
-    // 立即初始化监听器和数据（移除延迟）
-    private void lazyInitializeListenersAndData() {
-        try {
-            // 确保清理监听器记录
-            listenersAddedSet.clear();
-            
-            loadAllDataInBackground();
-            
-            // 初始时所有行只添加棚号/棚数监听器
-            for (int i = 0; i < dataList.size(); i++) {
-                FeedData data = dataList.get(i);
-                addShedListenersToRow(i);
-                
-                // 如果该行已有其他列数据，需要加载其他列监听器
-                if (hasOtherColumnData(data)) {
-                    loadOtherColumnListenersIfNeeded(i);
-                }
-                refreshRowCells(i);
-            }
-            
-            updateFooterRow();
-        } catch (Exception e) {
-            Log.e(TAG, "初始化异常", e);
-        }
-    }
-    
-    // 检查行是否有其他列（除棚号/棚数外）的数据
-    private boolean hasOtherColumnData(FeedData data) {
-        return data != null && (
-            data.getFermentedFeed() > 0 ||
-            data.getPowderFeed() > 0 ||
-            data.getFeed03() > 0 ||
-            data.getFeed05() > 0 ||
-            data.getFeed10() > 0
-        );
-    }
-    
-    // 检查行是否有棚号或棚数数据
-    private boolean hasShedData(FeedData data) {
-        return data != null && (!data.getShedNumber().isEmpty() || data.getShedCount() > 0);
     }
 
     // 在后台加载数据
@@ -567,38 +432,6 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 为单行添加监听器（棚号和棚数）
-    private void addShedListenersToRow(int rowIndex) {
-        try {
-            FeedData data = dataList.get(rowIndex);
-            if (data == null) return;
-
-            // 只为棚号和棚数列添加监听器
-            String[] shedColumns = {"shed_number", "shed_count"};
-            
-            for (String columnId : shedColumns) {
-                int columnIndex = getColumnIndex(columnId);
-                if (columnIndex < 0) continue;
-                
-                View view = cellViewMap.get(rowIndex + "_" + columnId);
-                if (view != null) {
-                    if (view instanceof TextView && !(view instanceof EditText)) {
-                        replaceTextViewWithEditText(rowIndex, columnId, columnIndex, (TextView)view);
-                    } else if (view instanceof EditText) {
-                        EditText editText = (EditText) view;
-
-                        String initialValue = getCellInitialValue(data, columnId);
-                        editText.setText(initialValue);
-
-                        addShedTextWatcher(editText, rowIndex, columnId, columnIndex);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "为行添加监听器异常: row=" + rowIndex, e);
-        }
-    }
-    
     // 获取列索引
     private int getColumnIndex(String columnId) {
         for (int i = 0; i < columnIds.length; i++) {
@@ -609,180 +442,84 @@ public class MixCalcActivity extends BaseActivity {
         return -1;
     }
 
-    // 为棚号/棚数添加TextWatcher（使用 HashSet 检查）
-    private void addShedTextWatcher(final EditText editText, final int rowIndex, final String columnId, final int columnIndex) {
-        String key = rowIndex + "_" + columnId;
-        if (listenersAddedSet.contains(key)) {
-            return; // 已添加过
+    private FeedData getData(int row) {
+        if (dataList == null || row < 0 || row >= dataList.size()) {
+            return null;
         }
-        listenersAddedSet.add(key);
-        
-        // 启用编辑
-        editText.setEnabled(true);
-        
-        editText.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
-            @Override
-            public void afterTextChanged(Editable s) {
-                if ("shed_number".equals(columnId)) {
-                    String text = s.toString().trim();
-                    final FeedData data = dataList.get(rowIndex);
-                    data.setShedNumber(text);
-                    data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                    updateShedCountDisplay(rowIndex, data);
-                    updateCalculatedCells(rowIndex);
-                    updateRowInputEnabled(rowIndex);
-                    updateFooterRow();
-                    saveAllData();
-                    checkShedCountLimitAndUpdateInput();
-                } else if ("shed_count".equals(columnId)) {
-                    // 棚数的处理在焦点监听器中
-                }
-            }
-        });
-        
-        // 棚数的焦点监听器单独添加
-        if ("shed_count".equals(columnId)) {
-            editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-                @Override
-                public void onFocusChange(View v, boolean hasFocus) {
-                    if (!hasFocus) {
-                        String text = editText.getText().toString().trim();
-                        final FeedData data = dataList.get(rowIndex);
-
-                        double newValue = 0;
-                        if (!text.isEmpty()) {
-                            try {
-                                newValue = Double.parseDouble(text);
-                            } catch (NumberFormatException e) {
-                                newValue = 0;
-                                editText.setText("");
-                            }
-                        }
-
-                        data.setShedCount((int)newValue);
-
-                        if (newValue == 0 || text.isEmpty()) {
-                            data.setShedCountManuallyModified(false);
-                        } else {
-                            data.setShedCountManuallyModified(true);
-                        }
-
-                        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                        updateCalculatedCells(rowIndex);
-                        updateRowInputEnabled(rowIndex);
-                        updateFooterRow();
-                        saveAllData();
-                        checkShedCountLimitAndUpdateInput();
-                        checkAndLoadOtherColumnListeners(rowIndex);
-                    }
-                }
-            });
-        }
-        
-        // 键盘下一步导航
-        editText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
-            @Override
-            public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
-                if (actionId == EditorInfo.IME_ACTION_NEXT) {
-                    moveFocusToNextEditableCell(rowIndex, columnIndex);
-                    return true;
-                }
-                return false;
-            }
-        });
+        return dataList.get(row);
     }
-    
-    // 在输入完棚号/棚数后，检查是否需要加载其他列监听器
-    private void checkAndLoadOtherColumnListeners(int rowIndex) {
-        FeedData data = dataList.get(rowIndex);
-        if (data == null) return;
-        
-        if (hasShedData(data)) {
-            loadOtherColumnListenersIfNeeded(rowIndex);
+
+    // ==================== 编辑提交（迁移自原 TextWatcher / 焦点监听） ====================
+
+    private void commitCell(int row, String columnId, String text) {
+        FeedData data = getData(row);
+        if (data == null) {
+            return;
         }
-    }
-    
-    // 延迟加载/移除其他列的监听器（当棚号或棚数有数据时加载，无数据时移除）
-    private void loadOtherColumnListenersIfNeeded(int rowIndex) {
-        if (rowIndex < 0 || rowIndex >= dataList.size()) return;
-        
-        FeedData data = dataList.get(rowIndex);
-        if (data == null) return;
-        
-        // 检查棚号或棚数是否有数据
-        if (hasShedData(data)) {
-            // 有数据：加载其他列监听器（使用Tag避免重复添加）
-            String[] otherColumns = {"fermented", "powder", "feed03", "feed05", "feed10", "average_feed"};
-            
-            for (String columnId : otherColumns) {
-                int columnIndex = getColumnIndex(columnId);
-                if (columnIndex < 0) continue;
-                
-                String key = rowIndex + "_" + columnId;
-                View view = cellViewMap.get(key);
-                if (view == null) continue;
-                
-                if (view instanceof EditText) {
-                    EditText editText = (EditText) view;
-                    
-                    // 检查是否已添加过监听器（使用 HashSet 检查）
-                    if (listenersAddedSet.contains(key)) {
-                        continue; // 已添加过，跳过
-                    }
-                    
-                    if ("average_feed".equals(columnId)) {
-                        editText.setEnabled(isCellEnabled("average_feed", data, rowIndex));
-                    } else {
-                        // 启用编辑
-                        editText.setEnabled(true);
-                    }
-                    
-                    String initialValue = getCellInitialValue(data, columnId);
-                    editText.setText(initialValue);
-                    
-                    if ("average_feed".equals(columnId)) {
-                        addAverageFeedTextWatcher(editText, rowIndex, columnId, columnIndex);
-                    } else {
-                        addOriginalTextWatcher(editText, rowIndex, columnId, columnIndex);
+        String value = text == null ? "" : text.trim();
+
+        switch (columnId) {
+            case "shed_number":
+                data.setShedNumber(value);
+                break;
+            case "shed_count": {
+                double newValue = 0;
+                if (!value.isEmpty()) {
+                    try {
+                        newValue = Double.parseDouble(value);
+                    } catch (NumberFormatException e) {
+                        newValue = 0;
                     }
                 }
+                data.setShedCount((int) newValue);
+                data.setShedCountManuallyModified(!(newValue == 0 || value.isEmpty()));
+                break;
             }
-            
-            updateCalculatedCells(rowIndex);
-            refreshSwitchRatioIndicator(rowIndex);
-        } else {
-            // 无数据：移除其他列监听器并禁用
-            removeOtherColumnListeners(rowIndex);
+            case "average_feed": {
+                data.setAverageManually(parseDouble(value), fermentedIncludedInAverage);
+                break;
+            }
+            default: {
+                double v = parseDouble(value);
+                data.setAverageManuallyModified(false);
+                switch (columnId) {
+                    case "fermented":
+                        data.setFermentedFeed(v);
+                        break;
+                    case "powder":
+                        data.setPowderFeed(v);
+                        break;
+                    case "feed03":
+                        data.setFeed03(v);
+                        break;
+                    case "feed05":
+                        data.setFeed05(v);
+                        break;
+                    case "feed10":
+                        data.setFeed10(v);
+                        break;
+                }
+                // 手改任意料格：作废已设置的换料比例，回到两料实际比例
+                if ("fermented".equals(columnId) || isNonFermentedFeedColumn(columnId)) {
+                    data.setSwitchRatio(0);
+                }
+                break;
+            }
         }
+
+        applyRowChange(row);
     }
-    
-    // 移除其他列的监听器并禁用
-    private void removeOtherColumnListeners(int rowIndex) {
-        if (rowIndex < 0 || rowIndex >= dataList.size()) return;
-        
-        String[] otherColumns = {"fermented", "powder", "feed03", "feed05", "feed10", "average_feed"};
-        
-        for (String columnId : otherColumns) {
-            String key = rowIndex + "_" + columnId;
-            View view = cellViewMap.get(key);
-            if (view == null) continue;
-            
-            if (view instanceof EditText) {
-                EditText editText = (EditText) view;
-                editText.setEnabled(false);
-                editText.setText("");
-            }
+
+    /**
+     * 行数据变化后的统一出口：无棚数时清空料格（对应旧的"禁用即清空"），重算并整表重绘。
+     */
+    private void applyRowChange(int row) {
+        FeedData data = getData(row);
+        if (data == null) {
+            return;
         }
-        
-        // 更新计算单元格
-        FeedData data = dataList.get(rowIndex);
-        if (data != null) {
+
+        if (data.getShedCount() <= 0) {
             data.setFermentedFeed(0);
             data.setPowderFeed(0);
             data.setFeed03(0);
@@ -792,321 +529,78 @@ public class MixCalcActivity extends BaseActivity {
             data.setWeighedFeed(0);
             data.setAverage(0);
             data.setAverageManuallyModified(false);
+            data.setSwitchRatio(0);
         }
-        
-        updateCalculatedCells(rowIndex);
-        updateRowInputEnabled(rowIndex);
+
+        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+        if (table != null) {
+            table.notifyAllChanged();
+        }
         updateFooterRow();
+        saveAllData();
+        checkShedCountLimitAndUpdateInput();
     }
 
-    // 替换TextView为EditText（用于棚号列）
-    private void replaceTextViewWithEditText(int rowIndex, String columnId, int columnIndex, TextView textView) {
-        ViewParent parent = textView.getParent();
-        if (parent instanceof LinearLayout) {
-            LinearLayout container = (LinearLayout) parent;
-
-            int position = -1;
-            for (int i = 0; i < container.getChildCount(); i++) {
-                if (container.getChildAt(i) == textView) {
-                    position = i;
-                    break;
-                }
-            }
-
-            if (position != -1) {
-                container.removeViewAt(position);
-
-                EditText editText = new EditText(this);
-                editText.setLayoutParams(new LinearLayout.LayoutParams(
-                                             adaptiveColumnWidths[columnIndex],
-                                             dpToPx(40)
-                                         ));
-                editText.setGravity(Gravity.CENTER);
-                editText.setTextSize(12);
-                editText.setTypeface(editText.getTypeface(), android.graphics.Typeface.BOLD);
-                editText.setBackgroundResource(R.drawable.cell_border);
-                editText.setPadding(0, 0, 0, 0);
-                editText.setTag(rowIndex + "_" + columnId);
-                editText.setInputType(InputType.TYPE_CLASS_TEXT);
-                editText.setSingleLine(true);
-                editText.setGravity(Gravity.CENTER);
-
-                FeedData data = dataList.get(rowIndex);
-                String initialValue = data.getShedNumber();
-                if (initialValue == null || initialValue.isEmpty()) {
-                    initialValue = textView.getText().toString();
-                    String shedFmt = getString(R.string.shed_number_format);
-                    String shedPrefix = shedFmt.substring(0, shedFmt.indexOf('%'));
-                    if (!shedPrefix.isEmpty() && initialValue.startsWith(shedPrefix)) {
-                        initialValue = "";
-                    }
-                }
-                editText.setText(initialValue);
-
-                addOriginalTextWatcher(editText, rowIndex, columnId, columnIndex);
-                container.addView(editText, position);
-                cellViewMap.put(rowIndex + "_" + columnId, editText);
-            }
+    private double parseDouble(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        try {
+            return Double.parseDouble(text);
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 
-    // 添加原始的TextWatcher（使用 HashSet 来标记已添加）
-    private void addOriginalTextWatcher(final EditText editText, final int rowIndex, final String columnId, final int columnIndex) {
-        String key = rowIndex + "_" + columnId;
-        if (listenersAddedSet.contains(key)) {
-            return; // 已添加过
-        }
-        listenersAddedSet.add(key);
-        
-        if ("shed_number".equals(columnId)) {
-            editText.addTextChangedListener(new TextWatcher() {
-                    @Override
-                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-                    @Override
-                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
-                    @Override
-                    public void afterTextChanged(Editable s) {
-                        String text = s.toString().trim();
-                        final FeedData data = dataList.get(rowIndex);
-                        data.setShedNumber(text);
-                        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                        updateShedCountDisplay(rowIndex, data);
-                        updateCalculatedCells(rowIndex);
-                        updateRowInputEnabled(rowIndex);
-                        updateFooterRow();
-                        saveAllData();
-                        checkShedCountLimitAndUpdateInput();
-                    }
-                });
-        } else if ("shed_count".equals(columnId)) {
-            editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-                    @Override
-                    public void onFocusChange(View v, boolean hasFocus) {
-                        if (!hasFocus) {
-                            String text = editText.getText().toString().trim();
-                            final FeedData data = dataList.get(rowIndex);
-
-                            double newValue = 0;
-                            if (!text.isEmpty()) {
-                                try {
-                                    newValue = Double.parseDouble(text);
-                                } catch (NumberFormatException e) {
-                                    newValue = 0;
-                                    editText.setText("");
-                                }
-                            }
-
-                            data.setShedCount((int)newValue);
-
-                            if (newValue == 0 || text.isEmpty()) {
-                                data.setShedCountManuallyModified(false);
-                            } else {
-                                data.setShedCountManuallyModified(true);
-                            }
-
-                            data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                            updateCalculatedCells(rowIndex);
-                            updateRowInputEnabled(rowIndex);
-                            updateFooterRow();
-                            saveAllData();
-                            checkShedCountLimitAndUpdateInput();
-                            checkAndLoadOtherColumnListeners(rowIndex);
-                        }
-                    }
-                });
-        } else {
-            if (isNonFermentedFeedColumn(columnId)) {
-                editText.setOnLongClickListener(new View.OnLongClickListener() {
-                        @Override
-                        public boolean onLongClick(View v) {
-                            FeedData d = dataList.get(rowIndex);
-                            String larger = getLargerNonFermentedColumn(d);
-                            if (larger != null && larger.equals(columnId)) {
-                                showSwitchRatioDrawer(d, v);
-                                return true;
-                            }
-                            return false;
-                        }
-                    });
+    // 移动到下一个可编辑单元格
+    private void moveFocusToNextEditableCell(int currentRow, int currentColumnIndex) {
+        try {
+            if (currentColumnIndex < 0 || table == null) {
+                return;
             }
-            editText.addTextChangedListener(new TextWatcher() {
-                    @Override
-                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 
-                    @Override
-                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
-                    @Override
-                    public void afterTextChanged(Editable s) {
-                        if (isUpdatingAverageCell) {
+            for (int nextColIndex = currentColumnIndex + 1; nextColIndex < columnIds.length; nextColIndex++) {
+                String nextColumnId = columnIds[nextColIndex];
+                Boolean visible = columnVisibility.get(nextColumnId);
+                if (visible != null && visible && isEditableColumn(nextColumnId)) {
+                    FeedData data = getData(currentRow);
+                    if (data != null && isCellEnabled(nextColumnId, data, currentRow)) {
+                        if (table.beginEdit(currentRow, nextColumnId)) {
                             return;
                         }
-                        String text = s.toString().trim();
-                        final FeedData data = dataList.get(rowIndex);
-                        data.setAverageManuallyModified(false);
-
-                        double value = 0;
-                        if (!text.isEmpty()) {
-                            try {
-                                value = Double.parseDouble(text);
-                            } catch (NumberFormatException e) {
-                                value = 0;
-                            }
-                        }
-
-                        switch (columnId) {
-                            case "fermented":
-                                data.setFermentedFeed(value);
-                                break;
-                            case "powder":
-                                data.setPowderFeed(value);
-                                break;
-                            case "feed03":
-                                data.setFeed03(value);
-                                break;
-                            case "feed05":
-                                data.setFeed05(value);
-                                break;
-                            case "feed10":
-                                data.setFeed10(value);
-                                break;
-                        }
-
-                        // 手改任意料格：作废已设置的换料比例，回到两料实际比例
-                        if ("fermented".equals(columnId) || isNonFermentedFeedColumn(columnId)) {
-                            data.setSwitchRatio(0);
-                        }
-
-                        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                        updateCalculatedCells(rowIndex);
-                        updateAverageCellEnabledState(rowIndex, data);
-                        refreshSwitchRatioIndicator(rowIndex);
-                        updateFooterRow();
-                        saveAllData();
-                        checkShedCountLimitAndUpdateInput();
-                    }
-                });
-        }
-
-        editText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
-                @Override
-                public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
-                    if (actionId == EditorInfo.IME_ACTION_NEXT) {
-                        moveFocusToNextEditableCell(rowIndex, columnIndex);
-                        return true;
-                    }
-                    return false;
-                }
-            });
-    }
-
-    // 为平均列添加TextWatcher（单行仅一种料时可编辑，反向计算料量）
-    private void addAverageFeedTextWatcher(final EditText editText, final int rowIndex, final String columnId, final int columnIndex) {
-        String key = rowIndex + "_" + columnId;
-        if (listenersAddedSet.contains(key)) {
-            return;
-        }
-        listenersAddedSet.add(key);
-
-        editText.addTextChangedListener(new TextWatcher() {
-                @Override
-                public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-                @Override
-                public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
-                @Override
-                public void afterTextChanged(Editable s) {
-                    if (isUpdatingAverageCell) {
-                        return;
-                    }
-                    String text = s.toString().trim();
-                    final FeedData data = dataList.get(rowIndex);
-
-                    double value = 0;
-                    if (!text.isEmpty()) {
-                        try {
-                            value = Double.parseDouble(text);
-                        } catch (NumberFormatException e) {
-                            value = 0;
-                        }
-                    }
-
-                    data.setAverageManually(value, fermentedIncludedInAverage);
-                    data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                    syncFeedCellsFromModel(rowIndex, data);
-                    updateCalculatedCells(rowIndex);
-                    updateAverageCellEnabledState(rowIndex, data);
-                    updateFooterRow();
-                    saveAllData();
-                }
-            });
-
-        editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-                @Override
-                public void onFocusChange(View v, boolean hasFocus) {
-                    if (!hasFocus) {
-                        FeedData data = dataList.get(rowIndex);
-                        String newValue = getCellInitialValue(data, "average_feed");
-                        EditText et = (EditText) v;
-                        if (!et.getText().toString().trim().equals(newValue)) {
-                            isUpdatingAverageCell = true;
-                            try {
-                                et.setText(newValue);
-                            } finally {
-                                isUpdatingAverageCell = false;
-                            }
-                        }
-                    }
-                }
-            });
-
-        editText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
-                @Override
-                public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
-                    if (actionId == EditorInfo.IME_ACTION_NEXT) {
-                        moveFocusToNextEditableCell(rowIndex, columnIndex);
-                        return true;
-                    }
-                    return false;
-                }
-            });
-    }
-
-    // 根据模型值同步该行料格文本（反算后调用，避免触发料格监听器）
-    private void syncFeedCellsFromModel(int rowIndex, FeedData data) {
-        String[] feedColumns = {"fermented", "powder", "feed03", "feed05", "feed10"};
-        for (String columnId : feedColumns) {
-            View view = cellViewMap.get(rowIndex + "_" + columnId);
-            if (view instanceof EditText) {
-                EditText editText = (EditText) view;
-                if (editText.hasFocus()) {
-                    continue;
-                }
-                String newValue = getCellInitialValue(data, columnId);
-                if (!editText.getText().toString().trim().equals(newValue)) {
-                    isUpdatingAverageCell = true;
-                    try {
-                        editText.setText(newValue);
-                    } finally {
-                        isUpdatingAverageCell = false;
                     }
                 }
             }
+
+            int nextRow = currentRow + 1;
+            if (dataList != null && nextRow < dataList.size()) {
+                for (int colIndex = 0; colIndex < columnIds.length; colIndex++) {
+                    String columnId = columnIds[colIndex];
+                    Boolean visible = columnVisibility.get(columnId);
+                    if (visible != null && visible && isEditableColumn(columnId)) {
+                        FeedData data = getData(nextRow);
+                        if (data != null && isCellEnabled(columnId, data, nextRow)) {
+                            if (table.beginEdit(nextRow, columnId)) {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 没有下一个可编辑格：收起浮层并隐藏输入法
+            table.endEdit();
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(table.getWindowToken(), 0);
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "移动焦点异常: " + e.getMessage());
         }
     }
 
-    // 根据当前状态刷新平均格的可用性（不改变文本、始终保持边框样式）
-    private void updateAverageCellEnabledState(int rowIndex, FeedData data) {
-        View view = cellViewMap.get(rowIndex + "_average_feed");
-        if (view instanceof EditText) {
-            EditText editText = (EditText) view;
-            editText.setEnabled(isCellEnabled("average_feed", data, rowIndex));
-            editText.setBackgroundResource(R.drawable.cell_border);
-        }
-    }
+    // ==================== 生命周期 / 棚数限制 ====================
 
     @Override
     protected void onResume() {
@@ -1121,8 +615,6 @@ public class MixCalcActivity extends BaseActivity {
         saveGlobalWaterPercentage();
         saveFermentedIncludedInWater();
         saveFermentedIncludedInAverage();
-        clearAllScrollListeners();
-        clearAllCellListeners();
     }
 
     @Override
@@ -1138,47 +630,37 @@ public class MixCalcActivity extends BaseActivity {
     public void onConfigurationChanged(android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         isTabletMode = isTabletDevice(this);
-        if (isTabletMode) {
-            initTabletAdaptiveSettings();
-            rebuildCompleteTable();
-        }
+        initTabletAdaptiveSettings();
+        rebuildCompleteTable();
     }
-
-
 
     // 检查棚数限制并更新输入状态
     private void checkShedCountLimitAndUpdateInput() {
         try {
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            int loadedLimit = prefs.getInt(KEY_SHED_COUNT_LIMIT, 0);
-            shedCountLimit = loadedLimit;
+            shedCountLimit = prefs.getInt(KEY_SHED_COUNT_LIMIT, 0);
 
-            if (shedCountLimit > 0) {
+            boolean newExceedStatus = false;
+            if (shedCountLimit > 0 && dataList != null) {
                 double totalShedCount = 0;
                 for (FeedData data : dataList) {
                     totalShedCount += data.getShedCount();
                 }
+                newExceedStatus = totalShedCount > shedCountLimit;
+            }
 
-                boolean newExceedStatus = totalShedCount > shedCountLimit;
-
-                if (newExceedStatus != isShedCountExceeded) {
-                    isShedCountExceeded = newExceedStatus;
-                    for (int i = 0; i < dataList.size(); i++) {
-                        updateRowInputEnabled(i);
-                    }
-                }
-            } else {
-                if (isShedCountExceeded) {
-                    isShedCountExceeded = false;
-                    for (int i = 0; i < dataList.size(); i++) {
-                        updateRowInputEnabled(i);
-                    }
+            if (newExceedStatus != isShedCountExceeded) {
+                isShedCountExceeded = newExceedStatus;
+                if (table != null) {
+                    table.notifyAllChanged();
                 }
             }
         } catch (Exception e) {
             Log.e(TAG, "检查棚数限制异常: " + e.getMessage());
         }
     }
+
+    // ==================== 数据格式化 / 跳转 ====================
 
     // 数据格式化和传递方法
     private String formatDataToMessage() {
@@ -1385,58 +867,6 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 创建统计单元格方法
-    private TextView createStatCell(String columnId, int columnIndex) {
-        TextView statView = new TextView(this);
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-            adaptiveColumnWidths[columnIndex],
-            dpToPx(40)
-        );
-
-        statView.setLayoutParams(params);
-        statView.setGravity(Gravity.CENTER);
-        statView.setTextSize(12);
-        statView.setTypeface(statView.getTypeface(), android.graphics.Typeface.BOLD);
-        statView.setBackgroundResource(R.drawable.cell_border);
-
-        if (columnIndex == columnIds.length - 1) {
-            statView.setText(getString(R.string.mix_btn_reset));
-            statView.setTextColor(0xFFFFFFFF);
-            statView.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
-            statView.setBackgroundResource(R.drawable.cell_border_carmine);
-            statView.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        showResetConfirmationDialog();
-                    }
-                });
-        } else if ("shed_number".equals(columnId)) {
-            statView.setText(getString(R.string.mix_btn_go_check));
-            statView.setTextColor(0xFFFFFFFF);
-            statView.setBackgroundResource(R.drawable.cell_border_blue);
-            statView.setTextSize(12);
-            statView.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
-            statView.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        prepareDataAndNavigate();
-                    }
-                });
-        } else if ("seq".equals(columnId)) {
-            int filledRows = getFilledRowCount();
-            statView.setText(getString(R.string.seq_stat_format, filledRows, TOTAL_ROWS));
-            statView.setTextColor(0xFF0000FF);
-            seqStatTextView = statView;
-        } else {
-            statView.setText("0");
-            statView.setTextColor(0xFF0000FF);
-            footerCellMap.put(columnId, statView);
-        }
-
-        return statView;
-    }
-
     // 更新统计行
     private void updateFooterRow() {
         try {
@@ -1467,20 +897,21 @@ public class MixCalcActivity extends BaseActivity {
                 }
             }
 
-            updateFooterCell("shed_count", totalShedCount);
-            updateFooterCell("fermented", totalFermented);
-            updateFooterCell("powder", totalPowder);
-            updateFooterCell("feed03", totalFeed03);
-            updateFooterCell("feed05", totalFeed05);
-            updateFooterCell("feed10", totalFeed10);
-            updateFooterCell("water", totalWater);
+            footerTotals.put("shed_count", totalShedCount);
+            footerTotals.put("fermented", totalFermented);
+            footerTotals.put("powder", totalPowder);
+            footerTotals.put("feed03", totalFeed03);
+            footerTotals.put("feed05", totalFeed05);
+            footerTotals.put("feed10", totalFeed10);
+            footerTotals.put("water", totalWater);
+            footerTotals.put("average_feed",
+                    validAverageCount > 0 ? totalAverageFeed / validAverageCount : 0);
 
-            double avgAverageFeed = validAverageCount > 0 ? totalAverageFeed / validAverageCount : 0;
-            updateFooterCell("average_feed", avgAverageFeed);
-
-            updateSeqStatView();
             checkShedCountLimitAndUpdateInput();
             updateErrorDisplay();
+            if (table != null) {
+                table.notifyAllChanged();
+            }
 
         } catch (Exception e) {
             Log.e(TAG, "更新统计行异常: " + e.getMessage());
@@ -1537,7 +968,8 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 平板适配核心方法
+    // ==================== 平板自适应 ====================
+
     private void initTabletAdaptiveSettings() {
         try {
             isTabletMode = isTabletDevice(this);
@@ -1634,12 +1066,9 @@ public class MixCalcActivity extends BaseActivity {
             if (Math.abs(currentTotal - targetWidth) > 50) {
                 float scale = (float) targetWidth / currentTotal;
 
-                int adjustedTotal = 0;
                 for (int i = 0; i < adaptiveColumnWidths.length; i++) {
                     adaptiveColumnWidths[i] = (int)(adaptiveColumnWidths[i] * scale);
-                    adjustedTotal += adaptiveColumnWidths[i];
                 }
-
             }
 
         } catch (Exception e) {
@@ -1658,121 +1087,12 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 刷新所有单元格显示
-    private void refreshAllCells() {
-        try {
-            for (int i = 0; i < dataList.size(); i++) {
-                refreshRowCells(i);
-            }
-
-            updateFooterRow();
-        } catch (Exception e) {
-            Log.e(TAG, "刷新所有单元格异常: " + e.getMessage(), e);
-        }
-    }
-
-    // 刷新指定行的所有单元格
-    private void refreshRowCells(int rowIndex) {
-        try {
-            FeedData data = dataList.get(rowIndex);
-
-            for (int i = 0; i < columnIds.length; i++) {
-                String columnId = columnIds[i];
-                View cellView = cellViewMap.get(rowIndex + "_" + columnId);
-
-                if (cellView != null) {
-                    if (cellView instanceof EditText) {
-                        EditText editText = (EditText) cellView;
-                        String currentValue = editText.getText().toString().trim();
-                        String newValue = getCellInitialValue(data, columnId);
-
-                        if (!currentValue.equals(newValue) && !editText.hasFocus()) {
-                            TextWatcher[] watchers = getTextWatchers(editText);
-                            for (TextWatcher watcher : watchers) {
-                                editText.removeTextChangedListener(watcher);
-                            }
-
-                            editText.setText(newValue);
-
-                            for (TextWatcher watcher : watchers) {
-                                editText.addTextChangedListener(watcher);
-                            }
-                        }
-
-                        boolean isEnabled = isCellEnabled(columnId, data, rowIndex);
-                        editText.setEnabled(isEnabled);
-
-                        if ("average_feed".equals(columnId)) {
-                            editText.setBackgroundResource(R.drawable.cell_border);
-                        } else if ("shed_count".equals(columnId)) {
-                            if (data.getShedCount() > 0 && isShedCountExceeded) {
-                                editText.setBackground(warningShedCountBg);
-                            } else {
-                                editText.setBackground(normalShedCountBg);
-                            }
-                        } else {
-                            if (isEnabled) {
-                                editText.setBackgroundResource(R.drawable.cell_border);
-                            } else {
-                                editText.setBackgroundResource(R.drawable.cell_border_disabled);
-                            }
-                        }
-
-                    } else if (cellView instanceof TextView) {
-                        // TextView处理逻辑
-                    }
-                }
-            }
-
-            updateRowInputEnabled(rowIndex);
-
-        } catch (Exception e) {
-            Log.e(TAG, "刷新行单元格异常，行索引: " + rowIndex + ", 错误: " + e.getMessage());
-        }
-    }
-
-    // 获取EditText的TextWatcher列表
-    private TextWatcher[] getTextWatchers(EditText editText) {
-        try {
-            Object[] listeners = (Object[]) editText.getClass()
-                .getMethod("getListeners", Class.forName("android.text.TextWatcher"))
-                .invoke(editText, (Object) null);
-
-            if (listeners != null && listeners.length > 0) {
-                TextWatcher[] watchers = new TextWatcher[listeners.length];
-                for (int i = 0; i < listeners.length; i++) {
-                    watchers[i] = (TextWatcher) listeners[i];
-                }
-                return watchers;
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "获取TextWatcher异常: " + e.getMessage());
-        }
-        return new TextWatcher[0];
-    }
+    // ==================== 视图接线 ====================
 
     private void initViews() {
         try {
-            dataContent = (LinearLayout) findViewById(R.id.data_content);
-            headerScrollContent = (LinearLayout) findViewById(R.id.header_scroll_content);
-            footerScrollContent = (LinearLayout) findViewById(R.id.footer_scroll_content);
-            fixedHeaderContainer = (LinearLayout) findViewById(R.id.fixed_header_container);
-            fixedFooterContainer = (LinearLayout) findViewById(R.id.fixed_footer_container);
-            headerScrollView = (HorizontalScrollView) findViewById(R.id.header_scroll_view);
-            footerScrollView = (HorizontalScrollView) findViewById(R.id.footer_scroll_view);
-            verticalScrollView = (ScrollView) findViewById(R.id.vertical_scroll_view);
-            tvErrorDisplay = (TextView) findViewById(R.id.tv_error_display);
-            
-            // 禁用橡皮筋效果
-            if (headerScrollView != null) {
-                headerScrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-            }
-            if (footerScrollView != null) {
-                footerScrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-            }
-            if (verticalScrollView != null) {
-                verticalScrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-            }
+            table = findViewById(R.id.mix_calc_table);
+            tvErrorDisplay = findViewById(R.id.tv_error_display);
 
             // 列设置齿轮按钮（平板模式下隐藏）
             View settingsBtn = findViewById(R.id.btn_column_settings);
@@ -1795,8 +1115,6 @@ public class MixCalcActivity extends BaseActivity {
     private void initData() {
         try {
             dataList = new ArrayList<FeedData>();
-            rowScrollViews = new ArrayList<HorizontalScrollView>();
-            fixedDataRows = new ArrayList<LinearLayout>();
 
             for (int i = 0; i < TOTAL_ROWS; i++) {
                 dataList.add(new FeedData());
@@ -1805,6 +1123,69 @@ public class MixCalcActivity extends BaseActivity {
             Log.e(TAG, "initData异常: " + e.getMessage());
         }
     }
+
+    /** 依据 columnIds / adaptiveColumnWidths / 可见 / 固定状态，重建引擎的列配置。 */
+    private void applyColumnConfig() {
+        if (table == null) {
+            return;
+        }
+
+        List<TableColumn> cols = new ArrayList<>();
+        for (int i = 0; i < columnIds.length; i++) {
+            int width = (adaptiveColumnWidths != null && i < adaptiveColumnWidths.length)
+                    ? adaptiveColumnWidths[i] : dpToPx(columnWidths[i]);
+            cols.add(createTableColumn(columnIds[i], width));
+        }
+
+        TableColumnConfig cfg = new TableColumnConfig(cols);
+        cfg.setFixed("seq", true);
+        for (int i = 1; i < columnIds.length; i++) {
+            String id = columnIds[i];
+            Boolean visible = columnVisibility.get(id);
+            Boolean fixed = columnFixed.get(id);
+            cfg.setVisible(id, visible == null || visible);
+            cfg.setFixed(id, fixed != null && fixed);
+        }
+
+        tableConfig = cfg;
+        table.setColumnConfig(cfg);
+    }
+
+    private TableColumn createTableColumn(String id, int widthPx) {
+        boolean editable = isEditableColumn(id);
+        int color = Color.BLACK;
+        int inputType = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL;
+
+        if ("seq".equals(id)) {
+            color = 0xFF666666;
+        } else if ("average_feed".equals(id) || "water".equals(id) || "weighed_feed".equals(id)) {
+            color = 0xFF0000FF;
+        }
+
+        if ("shed_number".equals(id)) {
+            inputType = InputType.TYPE_CLASS_TEXT;
+        }
+
+        return new TableColumn(id, widthPx, editable, color, inputType);
+    }
+
+    private void rebuildCompleteTable() {
+        try {
+            if (isTabletMode) {
+                calculateAdaptiveColumnWidths();
+            }
+            applyColumnConfig();
+            if (table != null) {
+                table.notifyAllChanged();
+            }
+            updateFooterRow();
+        } catch (Exception e) {
+            Log.e(TAG, "重建完整表格异常: " + e.getMessage(), e);
+            Toast.makeText(this, getString(R.string.mix_toast_rebuild_fail), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ==================== 列可见性 / 固定状态 ====================
 
     private void initColumnVisibility() {
         try {
@@ -1895,17 +1276,6 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 加载全局水百分比
-    private void loadGlobalWaterPercentage() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            globalWaterPercentage = prefs.getInt(KEY_GLOBAL_WATER, 20);
-        } catch (Exception e) {
-            Log.e(TAG, "加载全局水百分比异常: " + e.getMessage());
-            globalWaterPercentage = 20;
-        }
-    }
-
     // 保存发酵料参与水分计算设置
     private void saveFermentedIncludedInWater() {
         try {
@@ -1918,17 +1288,6 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 加载发酵料参与水分计算设置
-    private void loadFermentedIncludedInWater() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            fermentedIncludedInWater = prefs.getBoolean(KEY_FERMENTED_INCLUDED_IN_WATER, false);
-        } catch (Exception e) {
-            Log.e(TAG, "加载发酵料参与水分计算设置异常: " + e.getMessage());
-            fermentedIncludedInWater = false;
-        }
-    }
-
     // 保存发酵料参与平均吃料计算设置
     private void saveFermentedIncludedInAverage() {
         try {
@@ -1938,17 +1297,6 @@ public class MixCalcActivity extends BaseActivity {
             editor.apply();
         } catch (Exception e) {
             Log.e(TAG, "保存发酵料参与平均吃料计算设置异常: " + e.getMessage());
-        }
-    }
-
-    // 加载发酵料参与平均吃料计算设置
-    private void loadFermentedIncludedInAverage() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            fermentedIncludedInAverage = prefs.getBoolean(KEY_FERMENTED_INCLUDED_IN_AVERAGE, false);
-        } catch (Exception e) {
-            Log.e(TAG, "加载发酵料参与平均吃料计算设置异常: " + e.getMessage());
-            fermentedIncludedInAverage = false;
         }
     }
 
@@ -1970,240 +1318,6 @@ public class MixCalcActivity extends BaseActivity {
         } catch (Exception e) {
             Log.e(TAG, "保存所有数据异常: " + e.getMessage());
         }
-    }
-
-    private void rebuildCompleteTable() {
-        try {
-            if (isTabletMode) {
-                calculateAdaptiveColumnWidths();
-            }
-
-            clearAllScrollListeners();
-            clearAllCellListeners();
-            cleanupAllViews();
-            resetAllStates();
-            buildTableFromScratch();
-            
-            // 重建后重新加载监听器：所有行只添加棚号/棚数监听器
-            // 如果某行已有其他列数据，会自动加载其他列监听器
-            for (int i = 0; i < dataList.size(); i++) {
-                FeedData data = dataList.get(i);
-                addShedListenersToRow(i);
-                
-                // 如果该行已有其他列数据，需要加载其他列监听器
-                if (hasOtherColumnData(data)) {
-                    loadOtherColumnListenersIfNeeded(i);
-                }
-            }
-            
-            updateFooterRow();
-
-        } catch (Exception e) {
-            Log.e(TAG, "重建完整表格异常: " + e.getMessage(), e);
-            Toast.makeText(this, getString(R.string.mix_toast_rebuild_fail), Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private void clearAllScrollListeners() {
-        try {
-            for (ViewTreeObserver.OnScrollChangedListener listener : scrollListeners) {
-                if (headerScrollView != null) {
-                    headerScrollView.getViewTreeObserver().removeOnScrollChangedListener(listener);
-                }
-                if (footerScrollView != null) {
-                    footerScrollView.getViewTreeObserver().removeOnScrollChangedListener(listener);
-                }
-            }
-            scrollListeners.clear();
-
-            for (HorizontalScrollView scrollView : rowScrollViews) {
-                if (scrollView != null) {
-                    ViewTreeObserver observer = scrollView.getViewTreeObserver();
-                    observer.removeOnScrollChangedListener(null);
-                }
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "清理滚动监听器异常: " + e.getMessage());
-        }
-    }
-
-    private void clearAllCellListeners() {
-        try {
-            cellViewMap.clear();
-            rowLayoutMap.clear();
-            footerCellMap.clear();
-        } catch (Exception e) {
-            Log.e(TAG, "清理单元格监听器异常: " + e.getMessage());
-        }
-    }
-
-    private void cleanupAllViews() {
-        try {
-            if (headerScrollContent != null) headerScrollContent.removeAllViews();
-            if (footerScrollContent != null) footerScrollContent.removeAllViews();
-            if (fixedHeaderContainer != null) fixedHeaderContainer.removeAllViews();
-            if (fixedFooterContainer != null) fixedFooterContainer.removeAllViews();
-            if (dataContent != null) dataContent.removeAllViews();
-
-            rowScrollViews.clear();
-            fixedDataRows.clear();
-        } catch (Exception e) {
-            Log.e(TAG, "清理视图异常: " + e.getMessage());
-        }
-    }
-
-    private void resetAllStates() {
-        try {
-            currentScrollX = 0;
-            isSyncing = false;
-            isHorizontalScroll = false;
-            lastX = 0;
-            lastY = 0;
-            isShedCountExceeded = false;
-            listenersAddedSet.clear();
-        } catch (Exception e) {
-            Log.e(TAG, "重置状态异常: " + e.getMessage());
-        }
-    }
-
-    private void buildTableFromScratch() {
-        try {
-            int scrollWidth = calculateScrollWidth();
-
-            buildHeader(scrollWidth);
-            buildFooter(scrollWidth);
-            buildDataRows(scrollWidth);
-            setupScrollSync();
-
-        } catch (Exception e) {
-            Log.e(TAG, "从零构建表格异常: " + e.getMessage());
-        }
-    }
-
-    private int calculateScrollWidth() {
-        int width = 0;
-        for (int i = 0; i < columnIds.length; i++) {
-            String columnId = columnIds[i];
-            if (columnVisibility.get(columnId) && !columnFixed.get(columnId)) {
-                width += adaptiveColumnWidths[i];
-            }
-        }
-        return width;
-    }
-
-    private void buildHeader(int scrollWidth) {
-        try {
-            buildFixedHeader();
-            buildScrollHeader();
-
-            if (headerScrollContent != null && scrollWidth > 0) {
-                LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) headerScrollContent.getLayoutParams();
-                params.width = scrollWidth;
-                headerScrollContent.setLayoutParams(params);
-                headerScrollContent.requestLayout();
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "构建表头异常: " + e.getMessage());
-        }
-    }
-
-    private void buildFixedHeader() {
-        TextView seqHeader = createHeaderCell("seq", 0);
-        fixedHeaderContainer.addView(seqHeader);
-
-        for (int i = 1; i < columnIds.length; i++) {
-            final int columnIndex = i;
-            String columnId = columnIds[i];
-            boolean visible = columnVisibility.get(columnId);
-            boolean fixed = columnFixed.get(columnId);
-
-            if (visible && fixed) {
-                TextView headerView = createHeaderCell(columnId, columnIndex);
-                headerView.setOnLongClickListener(new View.OnLongClickListener() {
-                        @Override
-                        public boolean onLongClick(View v) {
-                            String columnId = columnIds[columnIndex];
-                            showColumnOperationMenu(columnIndex, columnId, v);
-                            return true;
-                        }
-                    });
-                fixedHeaderContainer.addView(headerView);
-            }
-        }
-    }
-
-    private void buildScrollHeader() {
-        for (int i = 1; i < columnIds.length; i++) {
-            final int columnIndex = i;
-            String columnId = columnIds[i];
-            boolean visible = columnVisibility.get(columnId);
-            boolean fixed = columnFixed.get(columnId);
-
-            if (visible && !fixed) {
-                TextView headerView = createHeaderCell(columnId, columnIndex);
-                headerView.setOnLongClickListener(new View.OnLongClickListener() {
-                        @Override
-                        public boolean onLongClick(View v) {
-                            String columnId = columnIds[columnIndex];
-                            showColumnOperationMenu(columnIndex, columnId, v);
-                            return true;
-                        }
-                    });
-                headerScrollContent.addView(headerView);
-            }
-        }
-    }
-
-    // 创建表头单元格
-    private TextView createHeaderCell(String columnId, int columnIndex) {
-        TextView headerView = new TextView(this);
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-            adaptiveColumnWidths[columnIndex],
-            dpToPx(40)
-        );
-
-        headerView.setLayoutParams(params);
-        headerView.setGravity(Gravity.CENTER);
-
-        if ("average_feed".equals(columnId)) {
-            headerView.setText(getString(R.string.mix_col_avg_feed));
-            headerView.setGravity(Gravity.CENTER);
-        } else if ("water".equals(columnId)) {
-            headerView.setText(getString(R.string.water_percentage_header, globalWaterPercentage));
-            headerView.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        showWaterPercentageDialog();
-                    }
-                });
-        } else {
-            headerView.setText(columnNames[columnIndex]);
-        }
-
-        // 为发酵料表头设置背景和点击事件
-        if ("fermented".equals(columnId)) {
-            // 根据当前设置初始化背景
-            updateFermentedHeaderCellBackground(headerView);
-
-            // 设置点击监听器，显示四个选项的对话框
-            headerView.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        showFermentedCalculationDialog(); // 改为新的四个选项对话框
-                    }
-                });
-        } else {
-            headerView.setBackgroundResource(R.drawable.cell_border);
-        }
-
-        headerView.setTextSize(12);
-        headerView.setSingleLine(true);
-        headerView.setTextColor(0xFF000000);
-
-        return headerView;
     }
 
     @android.annotation.SuppressLint("InflateParams")
@@ -2332,7 +1446,6 @@ public class MixCalcActivity extends BaseActivity {
                 if (needRefresh) {
                     saveFermentedIncludedInWater();
                     saveFermentedIncludedInAverage();
-                    updateFermentedHeaderBackground();
                     updateAllCalculations();
                     String status = getString(R.string.mix_setting_status);
                     status += fermentedIncludedInWater ? getString(R.string.mix_ferment_include_water) : getString(R.string.mix_ferment_exclude_water);
@@ -2347,120 +1460,6 @@ public class MixCalcActivity extends BaseActivity {
         } catch (Exception e) {
             Log.e(TAG, "显示发酵料计算设置对话框异常: " + e.getMessage());
             Toast.makeText(this, getString(R.string.mix_toast_setting_fail), Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    // 更新发酵料表头背景
-    private void updateFermentedHeaderBackground() {
-        updateFermentedHeaderInContainer(fixedHeaderContainer);
-        updateFermentedHeaderInContainer(headerScrollContent);
-    }
-
-    private void updateFermentedHeaderInContainer(LinearLayout container) {
-        if (container == null) return;
-        String fermentedLabel = getString(R.string.mix_col_fermented);
-
-        for (int i = 0; i < container.getChildCount(); i++) {
-            View child = container.getChildAt(i);
-            if (child instanceof TextView) {
-                TextView tv = (TextView) child;
-                String text = tv.getText().toString();
-
-                if (text.contains(fermentedLabel)) {
-                    updateFermentedHeaderCellBackground(tv);
-                }
-            }
-        }
-    }
-
-    // 为单个发酵料表头单元格设置背景
-    private void updateFermentedHeaderCellBackground(TextView headerView) {
-        if (headerView == null) return;
-
-        // 根据两个标志的组合选择不同的样式
-        if (fermentedIncludedInAverage) {
-            // 参与算料 - 使用褐色边框样式
-            if (fermentedIncludedInWater) {
-                // 参与算水 - 褐色边框 + 绿色背景
-                headerView.setBackgroundResource(R.drawable.cell_border_brown_green);
-            } else {
-                // 不参与算水 - 褐色边框 + 灰色背景
-                headerView.setBackgroundResource(R.drawable.cell_border_brown_gray);
-            }
-        } else {
-            // 不参与算料 - 使用原有的黑色边框样式
-            if (fermentedIncludedInWater) {
-                // 参与算水 - 黑色边框 + 绿色背景
-                headerView.setBackgroundResource(R.drawable.cell_border_green);
-            } else {
-                // 不参与算水 - 黑色边框 + 灰色背景
-                headerView.setBackgroundResource(R.drawable.cell_border_fermented_default);
-            }
-        }
-    }
-
-    private void buildFooter(int scrollWidth) {
-        try {
-            buildFixedFooter();
-            buildScrollFooter();
-
-            if (footerScrollContent != null && scrollWidth > 0) {
-                LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) footerScrollContent.getLayoutParams();
-                params.width = scrollWidth;
-                footerScrollContent.setLayoutParams(params);
-                footerScrollContent.requestLayout();
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "构建统计行异常: " + e.getMessage());
-        }
-    }
-
-    private void buildFixedFooter() {
-        TextView seqStat = createStatCell("seq", 0);
-        fixedFooterContainer.addView(seqStat);
-
-        for (int i = 1; i < columnIds.length; i++) {
-            final int columnIndex = i;
-            String columnId = columnIds[i];
-            boolean visible = columnVisibility.get(columnId);
-            boolean fixed = columnFixed.get(columnId);
-
-            if (visible && fixed) {
-                TextView statView = createStatCell(columnId, columnIndex);
-                fixedFooterContainer.addView(statView);
-            }
-        }
-    }
-
-    private void buildScrollFooter() {
-        for (int i = 1; i < columnIds.length; i++) {
-            final int columnIndex = i;
-            String columnId = columnIds[i];
-            boolean visible = columnVisibility.get(columnId);
-            boolean fixed = columnFixed.get(columnId);
-
-            if (visible && !fixed) {
-                TextView statView = createStatCell(columnId, columnIndex);
-                footerScrollContent.addView(statView);
-            }
-        }
-    }
-
-    // 在统计行更新单元格时考虑超限状态
-    private void updateFooterCell(String columnId, double value) {
-        TextView statView = footerCellMap.get(columnId);
-        if (statView != null) {
-            if (value == 0) {
-                statView.setText("0");
-            } else {
-                if (value == (int) value) {
-                    statView.setText(String.valueOf((int) value));
-                } else {
-                    statView.setText(String.format(java.util.Locale.ROOT, "%.2f", value));
-                }
-            }
-            statView.setTextColor(0xFF0000FF);
         }
     }
 
@@ -2553,442 +1552,83 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    private void buildDataRows(int scrollWidth) {
+    // 长按较大料格：竖直抽屉式菜单选择换料比例(10%~90%)，当前比例打勾
+    private void showSwitchRatioDrawer(final FeedData data, final Rect cellRect) {
         try {
-            for (int i = 0; i < dataList.size(); i++) {
-                buildDataRow(i, scrollWidth);
+            View popupView = getLayoutInflater().inflate(R.layout.popup_switch_ratio, null);
+            LinearLayout container = popupView.findViewById(R.id.ratio_items_container);
+            container.removeAllViews();
+
+            final PopupWindow popup = new PopupWindow(popupView);
+            popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            popup.setOutsideTouchable(true);
+            popup.setFocusable(true);
+            popup.setElevation(10);
+
+            double current = data.getSwitchRatio();
+
+            for (int p = 10; p <= 90; p += 10) {
+                final double ratio = p / 100.0;
+
+                LinearLayout itemRow = new LinearLayout(this);
+                itemRow.setOrientation(LinearLayout.HORIZONTAL);
+                itemRow.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(40)));
+                itemRow.setGravity(Gravity.CENTER_VERTICAL);
+                itemRow.setPadding(dpToPx(16), 0, dpToPx(16), 0);
+                itemRow.setClickable(true);
+                itemRow.setFocusable(true);
+
+                TextView valueTv = new TextView(this);
+                valueTv.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+                valueTv.setText(p + "%");
+                valueTv.setTextSize(15);
+                valueTv.setTextColor(0xFF333333);
+                valueTv.setGravity(Gravity.CENTER);
+                itemRow.addView(valueTv);
+
+                TextView checkTv = new TextView(this);
+                checkTv.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(24), ViewGroup.LayoutParams.MATCH_PARENT));
+                checkTv.setText(getString(R.string.mix_switch_checked));
+                checkTv.setTextSize(16);
+                checkTv.setTextColor(0xFF2E7D32);
+                checkTv.setGravity(Gravity.CENTER);
+                checkTv.setVisibility(Math.abs(current - ratio) < 0.0001 ? View.VISIBLE : View.INVISIBLE);
+                itemRow.addView(checkTv);
+
+                itemRow.setOnClickListener(v -> {
+                    data.setSwitchRatio(ratio);
+                    if (table != null) {
+                        table.notifyAllChanged();
+                    }
+                    saveAllData();
+                    popup.dismiss();
+                });
+
+                container.addView(itemRow);
+
+                if (p < 90) {
+                    View divider = new View(this);
+                    divider.setLayoutParams(new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, 1));
+                    divider.setBackgroundColor(0xFFE0E0E0);
+                    container.addView(divider);
+                }
             }
+
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            popup.setWidth(Math.min(dm.widthPixels, dpToPx(160)));
+            popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+
+            int[] loc = new int[2];
+            if (table != null) {
+                table.getLocationOnScreen(loc);
+            }
+            int x = loc[0] + (cellRect != null ? cellRect.left : 0);
+            int y = loc[1] + (cellRect != null ? cellRect.bottom : 0);
+            popup.showAtLocation(table, Gravity.NO_GRAVITY, x, y);
         } catch (Exception e) {
-            Log.e(TAG, "构建数据行异常: " + e.getMessage());
-        }
-    }
-
-    private void buildDataRow(final int rowIndex, int scrollWidth) {
-        LinearLayout rowLayout = new LinearLayout(this);
-        rowLayout.setOrientation(LinearLayout.HORIZONTAL);
-        rowLayout.setLayoutParams(new LinearLayout.LayoutParams(
-                                      LinearLayout.LayoutParams.MATCH_PARENT, 
-                                      dpToPx(40)
-                                  ));
-        rowLayoutMap.put(rowIndex, rowLayout);
-
-        LinearLayout fixedLayout = buildFixedColumns(rowIndex);
-        rowLayout.addView(fixedLayout);
-        fixedDataRows.add(fixedLayout);
-
-        HorizontalScrollView scrollView = buildScrollColumns(rowIndex, scrollWidth);
-        rowLayout.addView(scrollView);
-        rowScrollViews.add(scrollView);
-
-        dataContent.addView(rowLayout);
-    }
-
-    private LinearLayout buildFixedColumns(final int rowIndex) {
-        LinearLayout fixedLayout = new LinearLayout(this);
-        fixedLayout.setOrientation(LinearLayout.HORIZONTAL);
-
-        int fixedWidth = 0;
-
-        View seqView = createDataCell("seq", rowIndex, 0);
-        fixedLayout.addView(seqView);
-        fixedWidth += adaptiveColumnWidths[0];
-
-        for (int i = 1; i < columnIds.length; i++) {
-            final int columnIndex = i;
-            String columnId = columnIds[i];
-            boolean visible = columnVisibility.get(columnId);
-            boolean fixed = columnFixed.get(columnId);
-
-            if (visible && fixed) {
-                View cellView = createDataCell(columnId, rowIndex, columnIndex);
-                fixedLayout.addView(cellView);
-                fixedWidth += adaptiveColumnWidths[columnIndex];
-            }
-        }
-
-        fixedLayout.setLayoutParams(new LinearLayout.LayoutParams(
-                                        fixedWidth,
-                                        dpToPx(40)
-                                    ));
-
-        return fixedLayout;
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private HorizontalScrollView buildScrollColumns(final int rowIndex, int scrollWidth) {
-        HorizontalScrollView scrollView = new HorizontalScrollView(this);
-        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
-                                       0,
-                                       dpToPx(40),
-                                       1.0f
-                                   ));
-        scrollView.setHorizontalScrollBarEnabled(false);
-        scrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-
-        scrollView.setOnTouchListener(new View.OnTouchListener() {
-                @Override
-                public boolean onTouch(View v, MotionEvent event) {
-                    switch (event.getAction()) {
-                        case MotionEvent.ACTION_DOWN:
-                            lastX = event.getX();
-                            lastY = event.getY();
-                            isHorizontalScroll = false;
-                            break;
-
-                        case MotionEvent.ACTION_MOVE:
-                            float deltaX = Math.abs(event.getX() - lastX);
-                            float deltaY = Math.abs(event.getY() - lastY);
-
-                            if (deltaX > deltaY && deltaX > 5) {
-                                isHorizontalScroll = true;
-                                if (verticalScrollView != null) {
-                                    verticalScrollView.requestDisallowInterceptTouchEvent(true);
-                                }
-                            }
-                            break;
-
-                        case MotionEvent.ACTION_UP:
-                        case MotionEvent.ACTION_CANCEL:
-                            isHorizontalScroll = false;
-                            if (verticalScrollView != null) {
-                                verticalScrollView.requestDisallowInterceptTouchEvent(false);
-                            }
-                            break;
-                    }
-                    v.performClick();
-                    return false;
-                }
-            });
-
-        LinearLayout scrollContent = new LinearLayout(this);
-        scrollContent.setOrientation(LinearLayout.HORIZONTAL);
-        scrollContent.setLayoutParams(new LinearLayout.LayoutParams(
-                                          scrollWidth,
-                                          dpToPx(40)
-                                      ));
-
-        for (int i = 0; i < columnIds.length; i++) {
-            final int columnIndex = i;
-            String columnId = columnIds[i];
-            boolean visible = columnVisibility.get(columnId);
-            boolean fixed = columnFixed.get(columnId);
-
-            if (visible && !fixed) {
-                View cellView = createDataCell(columnId, rowIndex, columnIndex);
-                scrollContent.addView(cellView);
-            }
-        }
-
-        scrollView.addView(scrollContent);
-        return scrollView;
-    }
-
-    private View createDataCell(final String columnId, final int rowIndex, final int columnIndex) {
-        boolean isEditable = isEditableColumn(columnId);
-
-        if (isEditable) {
-            final EditText cellView = new EditText(this);
-
-            cellView.setLayoutParams(new LinearLayout.LayoutParams(
-                                         adaptiveColumnWidths[columnIndex],
-                                         dpToPx(40)
-                                     ));
-
-            cellView.setGravity(Gravity.CENTER);
-            cellView.setTextSize(12);
-            cellView.setTypeface(cellView.getTypeface(), android.graphics.Typeface.BOLD);
-            cellView.setBackgroundResource(R.drawable.cell_border);
-            cellView.setPadding(0, 0, 0, 0);
-            cellView.setSingleLine(true);
-            cellView.setTag(rowIndex + "_" + columnId);
-
-            if ("shed_number".equals(columnId)) {
-                cellView.setInputType(InputType.TYPE_CLASS_TEXT);
-                cellView.setSingleLine(true);
-                cellView.setGravity(Gravity.CENTER);
-            } else {
-                cellView.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-            }
-
-            cellView.setImeOptions(EditorInfo.IME_ACTION_NEXT);
-
-            FeedData data = dataList.get(rowIndex);
-            String initialValue = getCellInitialValue(data, columnId);
-            cellView.setText(initialValue);
-
-            if ("average_feed".equals(columnId)) {
-                cellView.setTextColor(0xFF0000FF);
-            }
-
-            boolean isEnabled = isCellEnabled(columnId, data, rowIndex);
-            cellView.setEnabled(isEnabled);
-
-            if (!isEnabled && !"average_feed".equals(columnId)) {
-                cellView.setBackgroundResource(R.drawable.cell_border_disabled);
-            }
-
-            // 已设置换料比例时，给粒径较大的非发酵料格加淡绿提示底色
-            if (isEnabled && isSwitchRatioCell(data, columnId)) {
-                cellView.setBackgroundResource(R.drawable.cell_border_ratio);
-            }
-
-            cellViewMap.put(rowIndex + "_" + columnId, cellView);
-
-            if ("shed_number".equals(columnId)) {
-                cellView.addTextChangedListener(new TextWatcher() {
-                        @Override
-                        public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-                        }
-
-                        @Override
-                        public void onTextChanged(CharSequence s, int start, int before, int count) {
-                        }
-
-                        @Override
-                        public void afterTextChanged(Editable s) {
-                            String text = s.toString().trim();
-                            final FeedData data = dataList.get(rowIndex);
-                            data.setShedNumber(text);
-                            data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                            updateShedCountDisplay(rowIndex, data);
-                            updateCalculatedCells(rowIndex);
-                            updateRowInputEnabled(rowIndex);
-                            updateFooterRow();
-                            saveAllData();
-                            checkShedCountLimitAndUpdateInput();
-                        }
-                    });
-            } else if ("shed_count".equals(columnId)) {
-                final int[] oldValue = {data.getShedCount()};
-
-                cellView.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-                        @Override
-                        public void onFocusChange(View v, boolean hasFocus) {
-                            if (!hasFocus) {
-                                String text = ((EditText)v).getText().toString().trim();
-                                final FeedData data = dataList.get(rowIndex);
-
-                                double newValue = 0;
-                                if (!text.isEmpty()) {
-                                    try {
-                                        newValue = Double.parseDouble(text);
-                                    } catch (NumberFormatException e) {
-                                        newValue = 0;
-                                        ((EditText)v).setText("");
-                                    }
-                                }
-
-                                if (oldValue[0] != (int)newValue) {
-                                    data.setShedCount((int)newValue);
-
-                                    if (newValue == 0 || text.isEmpty()) {
-                                        data.setShedCountManuallyModified(false);
-                                    } else {
-                                        data.setShedCountManuallyModified(true);
-                                    }
-                                }
-
-                                oldValue[0] = (int)newValue;
-
-                                data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                                updateCalculatedCells(rowIndex);
-                                updateRowInputEnabled(rowIndex);
-                                updateFooterRow();
-                                saveAllData();
-                                checkShedCountLimitAndUpdateInput();
-                            } else {
-                                String text = ((EditText)v).getText().toString().trim();
-                                if (!text.isEmpty()) {
-                                    try {
-                                        oldValue[0] = Integer.parseInt(text);
-                                    } catch (NumberFormatException e) {
-                                        oldValue[0] = 0;
-                                    }
-                                } else {
-                                    oldValue[0] = 0;
-                                }
-                            }
-                        }
-                    });
-            } else if ("average_feed".equals(columnId)) {
-                addAverageFeedTextWatcher(cellView, rowIndex, columnId, columnIndex);
-            } else {
-                if (isNonFermentedFeedColumn(columnId)) {
-                    cellView.setOnLongClickListener(new View.OnLongClickListener() {
-                        @Override
-                        public boolean onLongClick(View v) {
-                            FeedData d = dataList.get(rowIndex);
-                            String larger = getLargerNonFermentedColumn(d);
-                            if (larger != null && larger.equals(columnId)) {
-                                showSwitchRatioDrawer(d, v);
-                                return true;
-                            }
-                            return false;
-                        }
-                    });
-                }
-                cellView.addTextChangedListener(new TextWatcher() {
-                        @Override
-                        public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-                        }
-
-                        @Override
-                        public void onTextChanged(CharSequence s, int start, int before, int count) {
-                        }
-
-                        @Override
-                        public void afterTextChanged(Editable s) {
-                            if (isUpdatingAverageCell) {
-                                return;
-                            }
-                            String text = s.toString().trim();
-                            final FeedData data = dataList.get(rowIndex);
-                            data.setAverageManuallyModified(false);
-
-                            double value = 0;
-                            if (!text.isEmpty()) {
-                                try {
-                                    value = Double.parseDouble(text);
-                                } catch (NumberFormatException e) {
-                                    value = 0;
-                                }
-                            }
-
-                            switch (columnId) {
-                                case "fermented":
-                                    data.setFermentedFeed(value);
-                                    break;
-                                case "powder":
-                                    data.setPowderFeed(value);
-                                    break;
-                                case "feed03":
-                                    data.setFeed03(value);
-                                    break;
-                                case "feed05":
-                                    data.setFeed05(value);
-                                    break;
-                                case "feed10":
-                                    data.setFeed10(value);
-                                    break;
-                            }
-
-                            // 手改任意料格：以最后一次改动为准，作废已设置的换料比例，回到两料实际比例
-                            if ("fermented".equals(columnId) || isNonFermentedFeedColumn(columnId)) {
-                                data.setSwitchRatio(0);
-                            }
-
-                            data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                            updateCalculatedCells(rowIndex);
-                            updateAverageCellEnabledState(rowIndex, data);
-                            refreshSwitchRatioIndicator(rowIndex);
-                            updateFooterRow();
-                            saveAllData();
-                            checkShedCountLimitAndUpdateInput();
-                        }
-                    });
-            }
-
-            return cellView;
-        } else {
-            TextView cellView = new TextView(this);
-
-            cellView.setLayoutParams(new LinearLayout.LayoutParams(
-                                         adaptiveColumnWidths[columnIndex],
-                                         dpToPx(40)
-                                     ));
-
-            cellView.setGravity(Gravity.CENTER);
-            cellView.setTextSize(12);
-            cellView.setTypeface(cellView.getTypeface(), android.graphics.Typeface.BOLD);
-            cellView.setBackgroundResource(R.drawable.cell_border);
-            cellView.setPadding(0, 0, 0, 0);
-
-            cellView.setTag(rowIndex + "_" + columnId);
-            cellViewMap.put(rowIndex + "_" + columnId, cellView);
-
-            FeedData data = dataList.get(rowIndex);
-
-            if ("seq".equals(columnId)) {
-                cellView.setText(String.valueOf(rowIndex + 1));
-                cellView.setTextColor(0xFF666666);
-            } else if ("shed_number".equals(columnId)) {
-                String shedName = data.getShedNumber();
-                if (shedName == null || shedName.isEmpty()) {
-                    cellView.setText(getString(R.string.shed_number_format, rowIndex + 1));
-                } else {
-                    cellView.setText(shedName);
-                    cellView.setSingleLine(true);
-                    cellView.setGravity(Gravity.CENTER_VERTICAL | Gravity.CENTER_HORIZONTAL);
-                    cellView.setPadding(0, 0, 0, 0);
-                }
-                cellView.setTextColor(Color.BLACK);
-            } else {
-                String displayValue = getCellDisplayValue(data, columnId);
-                cellView.setText(displayValue);
-
-                if ("average_feed".equals(columnId) || "water".equals(columnId) || "weighed_feed".equals(columnId)) {
-                    cellView.setTextColor(0xFF0000FF);
-                } else {
-                    cellView.setTextColor(Color.BLACK);
-                }
-            }
-
-            return cellView;
-        }
-    }
-
-    // 移动到下一个可编辑单元格
-    private void moveFocusToNextEditableCell(int currentRow, int currentColumnIndex) {
-        try {
-            String currentColumnId = columnIds[currentColumnIndex];
-
-            for (int nextColIndex = currentColumnIndex + 1; nextColIndex < columnIds.length; nextColIndex++) {
-                String nextColumnId = columnIds[nextColIndex];
-
-                if (columnVisibility.get(nextColumnId) && 
-                    isEditableColumn(nextColumnId)) {
-
-                    FeedData data = dataList.get(currentRow);
-                    if (isCellEnabled(nextColumnId, data, currentRow)) {
-                        View nextCell = cellViewMap.get(currentRow + "_" + nextColumnId);
-                        if (nextCell != null && nextCell instanceof EditText) {
-                            nextCell.requestFocus();
-                            ((EditText)nextCell).selectAll();
-                            return;
-                        }
-                    }
-                }
-            }
-
-            int nextRow = currentRow + 1;
-            if (nextRow < dataList.size()) {
-                for (int colIndex = 0; colIndex < columnIds.length; colIndex++) {
-                    String columnId = columnIds[colIndex];
-
-                    if (columnVisibility.get(columnId) && 
-                        isEditableColumn(columnId)) {
-
-                        FeedData data = dataList.get(nextRow);
-                        if (isCellEnabled(columnId, data, nextRow)) {
-                            View nextCell = cellViewMap.get(nextRow + "_" + columnId);
-                            if (nextCell != null && nextCell instanceof EditText) {
-                                nextCell.requestFocus();
-                                ((EditText)nextCell).selectAll();
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-
-            View currentView = cellViewMap.get(currentRow + "_" + currentColumnId);
-            if (currentView != null && currentView.hasFocus()) {
-                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-                imm.hideSoftInputFromWindow(currentView.getWindowToken(), 0);
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "移动焦点异常: " + e.getMessage());
+            Log.e(TAG, "showSwitchRatioDrawer: " + e.getMessage(), e);
         }
     }
 
@@ -3044,233 +1684,6 @@ public class MixCalcActivity extends BaseActivity {
         return larger != null && larger.equals(columnId);
     }
 
-    // 刷新某行四个非发酵料格的背景，用于提示换料比例是否生效
-    private void refreshSwitchRatioIndicator(int rowIndex) {
-        FeedData data = dataList.get(rowIndex);
-        for (String c : NF_FEED_COLUMNS) {
-            View v = cellViewMap.get(rowIndex + "_" + c);
-            if (v instanceof EditText) {
-                EditText et = (EditText) v;
-                if (!et.isEnabled()) {
-                    continue;
-                }
-                et.setBackgroundResource(isSwitchRatioCell(data, c)
-                        ? R.drawable.cell_border_ratio : R.drawable.cell_border);
-            }
-        }
-    }
-
-    // 长按较大料格：竖直抽屉式菜单选择换料比例(10%~90%)，当前比例打勾
-    private void showSwitchRatioDrawer(final FeedData data, View anchor) {
-        try {
-            View popupView = getLayoutInflater().inflate(R.layout.popup_switch_ratio, null);
-            LinearLayout container = popupView.findViewById(R.id.ratio_items_container);
-            container.removeAllViews();
-
-            final PopupWindow popup = new PopupWindow(popupView);
-            popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-            popup.setOutsideTouchable(true);
-            popup.setFocusable(true);
-            popup.setElevation(10);
-
-            double current = data.getSwitchRatio();
-
-            for (int p = 10; p <= 90; p += 10) {
-                final double ratio = p / 100.0;
-
-                LinearLayout itemRow = new LinearLayout(this);
-                itemRow.setOrientation(LinearLayout.HORIZONTAL);
-                itemRow.setLayoutParams(new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(40)));
-                itemRow.setGravity(Gravity.CENTER_VERTICAL);
-                itemRow.setPadding(dpToPx(16), 0, dpToPx(16), 0);
-                itemRow.setClickable(true);
-                itemRow.setFocusable(true);
-
-                TextView valueTv = new TextView(this);
-                valueTv.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-                valueTv.setText(p + "%");
-                valueTv.setTextSize(15);
-                valueTv.setTextColor(0xFF333333);
-                valueTv.setGravity(Gravity.CENTER);
-                itemRow.addView(valueTv);
-
-                TextView checkTv = new TextView(this);
-                checkTv.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(24), ViewGroup.LayoutParams.MATCH_PARENT));
-                checkTv.setText(getString(R.string.mix_switch_checked));
-                checkTv.setTextSize(16);
-                checkTv.setTextColor(0xFF2E7D32);
-                checkTv.setGravity(Gravity.CENTER);
-                checkTv.setVisibility(Math.abs(current - ratio) < 0.0001 ? View.VISIBLE : View.INVISIBLE);
-                itemRow.addView(checkTv);
-
-                itemRow.setOnClickListener(v -> {
-                    data.setSwitchRatio(ratio);
-                    int ri = dataList.indexOf(data);
-                    if (ri >= 0) {
-                        refreshSwitchRatioIndicator(ri);
-                    }
-                    saveAllData();
-                    popup.dismiss();
-                });
-
-                container.addView(itemRow);
-
-                if (p < 90) {
-                    View divider = new View(this);
-                    divider.setLayoutParams(new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, 1));
-                    divider.setBackgroundColor(0xFFE0E0E0);
-                    container.addView(divider);
-                }
-            }
-
-            DisplayMetrics dm = getResources().getDisplayMetrics();
-            popup.setWidth(Math.min(dm.widthPixels, dpToPx(160)));
-            popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
-            popup.showAsDropDown(anchor, 0, 0);
-        } catch (Exception e) {
-            Log.e(TAG, "showSwitchRatioDrawer: " + e.getMessage(), e);
-        }
-    }
-
-    // 更新行的输入状态
-    private void updateRowInputEnabled(int rowIndex) {
-        FeedData data = dataList.get(rowIndex);
-
-        String[] editableColumns = {"fermented", "powder", "feed03", "feed05", "feed10", "shed_number", "shed_count", "average_feed"};
-        for (String columnId : editableColumns) {
-            View view = cellViewMap.get(rowIndex + "_" + columnId);
-            if (view instanceof EditText) {
-                EditText editText = (EditText) view;
-                boolean isEnabled = isCellEnabled(columnId, data, rowIndex);
-
-                editText.setEnabled(isEnabled);
-
-                if ("average_feed".equals(columnId)) {
-                    editText.setBackgroundResource(R.drawable.cell_border);
-                    continue;
-                }
-
-                if ("shed_count".equals(columnId)) {
-                    if (data.getShedCount() > 0 && isShedCountExceeded) {
-                        editText.setBackground(warningShedCountBg);
-                    } else {
-                        editText.setBackground(normalShedCountBg);
-                    }
-                } else {
-                    if (isEnabled) {
-                        editText.setBackgroundResource(isSwitchRatioCell(data, columnId)
-                                ? R.drawable.cell_border_ratio : R.drawable.cell_border);
-                    } else {
-                        editText.setBackgroundResource(R.drawable.cell_border_disabled);
-                        if (!"shed_number".equals(columnId)) {
-                            editText.setText("");
-
-                            switch (columnId) {
-                                case "fermented":
-                                    data.setFermentedFeed(0);
-                                    break;
-                                case "powder":
-                                    data.setPowderFeed(0);
-                                    break;
-                                case "feed03":
-                                    data.setFeed03(0);
-                                    break;
-                                case "feed05":
-                                    data.setFeed05(0);
-                                    break;
-                                case "feed10":
-                                    data.setFeed10(0);
-                                    break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-        updateCalculatedCells(rowIndex);
-        saveAllData();
-    }
-
-    private void updateShedCountDisplay(int rowIndex, FeedData data) {
-        if (rowIndex < 0 || data == null) return;
-        
-        View shedCountView = cellViewMap.get(rowIndex + "_shed_count");
-        if (shedCountView instanceof EditText) {
-            if (!data.isShedCountManuallyModified()) {
-                String displayValue = data.getShedCount() == 0 ? "" : String.valueOf(data.getShedCount());
-                ((EditText)shedCountView).setText(displayValue);
-            }
-        }
-        // 检查是否需要加载其他列监听器
-        checkAndLoadOtherColumnListeners(rowIndex);
-    }
-
-    // 更新计算列
-    private void updateCalculatedCells(int rowIndex) {
-        try {
-            FeedData data = dataList.get(rowIndex);
-
-            // 更新平均吃料单元格
-            View averageFeedView = cellViewMap.get(rowIndex + "_average_feed");
-            if (averageFeedView instanceof TextView) {
-                // 使用新的方法获取平均吃料值，考虑是否包含发酵料
-                double averageValue = data.getAverage(fermentedIncludedInAverage);
-                String displayValue = averageValue == 0 ? "" : formatNumber(averageValue);
-                TextView averageTextView = (TextView) averageFeedView;
-                boolean isEditing = (averageTextView instanceof EditText) && averageTextView.hasFocus();
-                if (!isEditing && !averageTextView.getText().toString().trim().equals(displayValue)) {
-                    boolean previousFlag = isUpdatingAverageCell;
-                    isUpdatingAverageCell = true;
-                    try {
-                        averageTextView.setText(displayValue);
-                    } finally {
-                        isUpdatingAverageCell = previousFlag;
-                    }
-                }
-                averageTextView.setTextColor(0xFF0000FF);
-            }
-
-            // 更新水单元格
-            View waterView = cellViewMap.get(rowIndex + "_water");
-            if (waterView instanceof TextView) {
-                double waterValue = data.getWater();
-                String displayValue = waterValue == 0 ? "" : formatNumber(waterValue);
-                ((TextView)waterView).setText(displayValue);
-                ((TextView)waterView).setTextColor(0xFF0000FF);
-            }
-
-            // 更新称料单元格
-            View weighedFeedView = cellViewMap.get(rowIndex + "_weighed_feed");
-            if (weighedFeedView instanceof TextView) {
-                double weighedFeed = data.getWeighedFeed();
-                int shedCount = data.getShedCount();
-
-                String displayValue = "";
-                if (shedCount > 0 && weighedFeed > 0) {
-                    if (weighedFeed == (int) weighedFeed) {
-                        displayValue = String.valueOf((int) weighedFeed) + "×" + shedCount;
-                    } else {
-                        displayValue = String.format(java.util.Locale.ROOT, "%.2f", weighedFeed) + "×" + shedCount;
-                    }
-                }
-                ((TextView)weighedFeedView).setText(displayValue);
-                ((TextView)weighedFeedView).setTextColor(0xFF0000FF);
-            }
-
-            // 手动平均模式下，反向计算的料量需要同步到对应料格
-            if (data.isAverageManuallyModified()) {
-                syncFeedCellsFromModel(rowIndex, data);
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "更新计算单元格异常: " + e.getMessage());
-        }
-    }
-
     // 更新所有计算
     private void updateAllCalculations() {
         try {
@@ -3278,22 +1691,16 @@ public class MixCalcActivity extends BaseActivity {
                 FeedData data = dataList.get(i);
                 // 重新计算所有行，传入两个标志
                 data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                updateCalculatedCells(i);
             }
 
+            if (table != null) {
+                table.notifyAllChanged();
+            }
             updateFooterRow();
             saveAllData();
 
         } catch (Exception e) {
             Log.e(TAG, "更新所有计算异常: " + e.getMessage());
-        }
-    }
-
-    // 更新序号列统计行
-    private void updateSeqStatView() {
-        if (seqStatTextView != null) {
-            int filledRows = getFilledRowCount();
-            seqStatTextView.setText(getString(R.string.seq_stat_format, filledRows, TOTAL_ROWS));
         }
     }
 
@@ -3373,7 +1780,9 @@ public class MixCalcActivity extends BaseActivity {
             "feed10".equals(columnId);
     }
 
-    private void showColumnOperationMenu(final int columnIndex, final String columnId, View view) {
+    // ==================== 列操作 ====================
+
+    private void showColumnOperationMenu(final int columnIndex, final String columnId) {
         try {
             boolean isVisible = columnVisibility.get(columnId);
             boolean isFixed = columnFixed.get(columnId);
@@ -3429,12 +1838,7 @@ public class MixCalcActivity extends BaseActivity {
                 return;
             }
 
-            new Handler().postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        rebuildCompleteTable();
-                    }
-                }, 100);
+            rebuildCompleteTable();
 
         } catch (Exception e) {
             Log.e(TAG, "处理列操作异常: " + e.getMessage());
@@ -3485,70 +1889,6 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    private void setupScrollSync() {
-        try {
-            headerScrollView.setHorizontalScrollBarEnabled(false);
-            footerScrollView.setHorizontalScrollBarEnabled(false);
-
-            for (HorizontalScrollView scrollView : rowScrollViews) {
-                scrollView.setHorizontalScrollBarEnabled(false);
-            }
-
-            setupScrollViewListener(headerScrollView);
-            setupScrollViewListener(footerScrollView);
-
-            for (HorizontalScrollView scrollView : rowScrollViews) {
-                setupScrollViewListener(scrollView);
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "设置滚动同步异常: " + e.getMessage());
-        }
-    }
-
-    private void setupScrollViewListener(final HorizontalScrollView scrollView) {
-        if (scrollView == null) return;
-
-        ViewTreeObserver.OnScrollChangedListener listener = new ViewTreeObserver.OnScrollChangedListener() {
-            @Override
-            public void onScrollChanged() {
-                if (!isSyncing && scrollView != null) {
-                    isSyncing = true;
-                    int newScrollX = scrollView.getScrollX();
-                    if (newScrollX != currentScrollX) {
-                        currentScrollX = newScrollX;
-                        syncAllScrollViews(currentScrollX, scrollView);
-                    }
-                    isSyncing = false;
-                }
-            }
-        };
-
-        scrollView.getViewTreeObserver().addOnScrollChangedListener(listener);
-        scrollListeners.add(listener);
-    }
-
-    private void syncAllScrollViews(int scrollX, HorizontalScrollView source) {
-        try {
-            if (headerScrollView != null && headerScrollView != source) {
-                headerScrollView.scrollTo(scrollX, 0);
-            }
-
-            if (footerScrollView != null && footerScrollView != source) {
-                footerScrollView.scrollTo(scrollX, 0);
-            }
-
-            for (HorizontalScrollView rowScrollView : rowScrollViews) {
-                if (rowScrollView != null && rowScrollView != source) {
-                    rowScrollView.scrollTo(scrollX, 0);
-                }
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "同步滚动视图异常: " + e.getMessage());
-        }
-    }
-
     private void showWaterPercentageDialog() {
         try {
             final String[] percentages = {"10", "15", "20", "25", "30", "35", "40"};
@@ -3560,8 +1900,8 @@ public class MixCalcActivity extends BaseActivity {
             showStyledListDialog(getString(R.string.mix_title_water_pct), displayTexts, (dialog, which) -> {
                 try {
                     globalWaterPercentage = Integer.parseInt(percentages[which]);
-                    updateWaterHeader();
                     saveGlobalWaterPercentage();
+                    // updateAllCalculations 会重绘（表头水百分比也由 provider 重新取）
                     updateAllCalculations();
                     Toast.makeText(MixCalcActivity.this, getString(R.string.mix_water_pct_format, globalWaterPercentage), Toast.LENGTH_SHORT).show();
                 } catch (Exception e) {
@@ -3571,30 +1911,6 @@ public class MixCalcActivity extends BaseActivity {
 
         } catch (Exception e) {
             Log.e(TAG, "显示水百分比对话框异常: " + e.getMessage());
-        }
-    }
-
-    private void updateWaterHeader() {
-        try {
-            updateWaterCells(fixedHeaderContainer);
-            updateWaterCells(headerScrollContent);
-        } catch (Exception e) {
-            Log.e(TAG, "更新水列表头异常: " + e.getMessage());
-        }
-    }
-
-    private void updateWaterCells(LinearLayout container) {
-        if (container != null) {
-            for (int i = 0; i < container.getChildCount(); i++) {
-                View child = container.getChildAt(i);
-                if (child instanceof TextView) {
-                    TextView tv = (TextView) child;
-                    String waterPrefix = getString(R.string.mix_col_water);
-                    if (tv.getText().toString().startsWith(waterPrefix)) {
-                        tv.setText(getString(R.string.water_percentage_header, globalWaterPercentage));
-                    }
-                }
-            }
         }
     }
 

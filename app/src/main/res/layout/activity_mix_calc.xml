@@ -54,98 +54,12 @@
             android:textColor="#FFFFFF" />
     </LinearLayout>
 
-    <!-- 表头区域 -->
-    <LinearLayout
-        android:id="@+id/header_container"
-        android:layout_width="match_parent"
-        android:layout_height="40dp"  
-        android:orientation="horizontal"
-        android:baselineAligned="false"
-        android:background="#e8f5e9">
-
-        <!-- 固定列表头（左侧） -->
-        <LinearLayout
-            android:id="@+id/fixed_header_container"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:background="#e8f5e9">
-            <!-- 序号列始终固定，已在XML中定义 -->
-        </LinearLayout>
-
-        <!-- 可水平滚动的表头区域（右侧） -->
-        <HorizontalScrollView
-            android:id="@+id/header_scroll_view"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:scrollbars="none"> <!-- 禁用滚动条 -->
-
-            <LinearLayout
-                android:id="@+id/header_scroll_content"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:orientation="horizontal">
-                <!-- 非固定列的表头会动态添加 -->
-            </LinearLayout>
-        </HorizontalScrollView>
-    </LinearLayout>
-
-    <!-- 数据区域 -->
-    <ScrollView
-        android:id="@+id/vertical_scroll_view"
+    <!-- 表格区域：表头 + 表体 + 表尾由同一个自绘 View 绘制 -->
+    <com.shrimpfarm.app.mixcalc.table.MixCalcTableView
+        android:id="@+id/mix_calc_table"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:fillViewport="true"
-        android:scrollbars="vertical">
-
-        <LinearLayout
-            android:id="@+id/data_content"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:minHeight="400dp">
-            <!-- 数据行会动态添加，每行包含固定列和滚动列 -->
-        </LinearLayout>
-    </ScrollView>
-
-    <!-- 底部统计区域 -->
-    <LinearLayout
-        android:id="@+id/footer_container"
-        android:layout_width="match_parent"
-        android:layout_height="40dp"  
-        android:orientation="horizontal"
-        android:baselineAligned="false"
-        android:background="#f0f0f0">
-
-        <!-- 固定列统计（左侧） -->
-        <LinearLayout
-            android:id="@+id/fixed_footer_container"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:background="#f0f0f0">
-            <!-- 序号列统计动态添加 -->
-        </LinearLayout>
-
-        <!-- 可水平滚动的统计区域（右侧） -->
-        <HorizontalScrollView
-            android:id="@+id/footer_scroll_view"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:scrollbars="none"> <!-- 禁用滚动条 -->
-
-            <LinearLayout
-                android:id="@+id/footer_scroll_content"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:orientation="horizontal">
-                <!-- 非固定列的统计会动态添加 -->
-            </LinearLayout>
-        </HorizontalScrollView>
-    </LinearLayout>
+        android:layout_weight="1" />
     <!-- 底部导航栏 -->
     <LinearLayout
         android:id="@+id/bottom_nav"
