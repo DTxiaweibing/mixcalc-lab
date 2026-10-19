@@ -7,6 +7,8 @@ import org.json.JSONObject;
 public class FeedData {
     private String shedNumber;
     private int shedCount;
+    // 第 1 行专用：未扣减的基数（第 2..N 行棚数之和要从这里扣掉）
+    private int shedCountBase;
     private double average;
     private double fermentedFeed;
     private double powderFeed;
@@ -27,6 +29,7 @@ public class FeedData {
     public FeedData() {
         this.shedNumber = "";
         this.shedCount = 0;
+        this.shedCountBase = 0;
         this.average = 0;
         this.fermentedFeed = 0;
         this.powderFeed = 0;
@@ -61,6 +64,7 @@ public class FeedData {
             JSONObject json = new JSONObject();
             json.put("shedNumber", shedNumber != null ? shedNumber : "");
             json.put("shedCount", shedCount);
+            json.put("shedCountBase", shedCountBase);
             json.put("average", average);
             json.put("fermentedFeed", fermentedFeed);
             json.put("powderFeed", powderFeed);
@@ -85,6 +89,7 @@ public class FeedData {
             if (json != null) {
                 shedNumber = json.optString("shedNumber", "");
                 shedCount = json.optInt("shedCount", 0);
+                shedCountBase = json.optInt("shedCountBase", 0);
                 average = json.optDouble("average", 0);
                 fermentedFeed = json.optDouble("fermentedFeed", 0);
                 powderFeed = json.optDouble("powderFeed", 0);
@@ -215,6 +220,14 @@ public class FeedData {
         if (!isShedCountManuallyModified) {
             calculateShedCount();
         }
+        recalculateDerivedOnly(waterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+    }
+
+    /**
+     * 只重算依赖棚数的派生值（平均吃料 / 水量 / 称料），不动棚数本身。
+     * 供第 1 行扣完基数后刷新使用。
+     */
+    public void recalculateDerivedOnly(int waterPercentage, boolean fermentedIncludedInWater, boolean fermentedIncludedInAverage) {
         if (isAverageManuallyModified) {
             if (canEditAverage()) {
                 applyManualAverage(fermentedIncludedInAverage);
@@ -227,6 +240,14 @@ public class FeedData {
         }
         calculateWater(waterPercentage, fermentedIncludedInWater);
         calculateWeighedFeed(fermentedIncludedInWater);
+    }
+
+    public int getShedCountBase() {
+        return shedCountBase;
+    }
+
+    public void setShedCountBase(int shedCountBase) {
+        this.shedCountBase = shedCountBase;
     }
 
     // 非发酵料（粉/0.3/0.5/1.0）中有数据的种类数
