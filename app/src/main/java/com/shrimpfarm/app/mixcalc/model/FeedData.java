@@ -326,11 +326,26 @@ public class FeedData {
         }
 
         if (nf == 1) {
+            int small = -1;
             for (int i = 0; i <= NF_FEED10; i++) {
                 if (getNonFermentedValue(i) > 0) {
-                    setNonFermentedValue(i, base);
+                    small = i;
                     break;
                 }
+            }
+            // 已选换料比例且还有“大一号”可换：把总量按比例拆成两档（大一号 = 总量×ratio）
+            if (small >= 0 && switchRatio > 0 && small + 1 <= NF_FEED10) {
+                double ratio = switchRatio;
+                if (ratio < 0.1) {
+                    ratio = 0.1;
+                }
+                if (ratio > 0.9) {
+                    ratio = 0.9;
+                }
+                setNonFermentedValue(small + 1, base * ratio);
+                setNonFermentedValue(small, base * (1 - ratio));
+            } else if (small >= 0) {
+                setNonFermentedValue(small, base);
             }
         } else if (nf == 2) {
             int small = -1;

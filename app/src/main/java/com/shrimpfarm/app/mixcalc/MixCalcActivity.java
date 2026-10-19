@@ -251,9 +251,10 @@ public class MixCalcActivity extends BaseActivity {
             if (!isCellEnabled(columnId, data, row)) {
                 return;
             }
-            String larger = getLargerNonFermentedColumn(data);
-            if (larger != null && larger.equals(columnId)) {
-                showSwitchRatioDrawer(data, cellRect);
+            // 长按“较大那档”：恰好两档时是较大的那档；只有一档时是它的“大一号”（该格可以为空）
+            String target = getSwitchTargetColumn(data);
+            if (target != null && target.equals(columnId)) {
+                showSwitchRatioDrawer(data, row, cellRect);
             }
         }
 
@@ -1630,8 +1631,8 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 长按较大料格：竖直抽屉式菜单选择换料比例(10%~90%)，当前比例打勾
-    private void showSwitchRatioDrawer(final FeedData data, final Rect cellRect) {
+    // 长按较大料格（或只有一档时它的“大一号”）：竖直抽屉式菜单选择换料比例(10%~90%)，当前比例打勾
+    private void showSwitchRatioDrawer(final FeedData data, final int row, final Rect cellRect) {
         try {
             View popupView = getLayoutInflater().inflate(R.layout.popup_switch_ratio, null);
             LinearLayout container = popupView.findViewById(R.id.ratio_items_container);
@@ -1676,10 +1677,8 @@ public class MixCalcActivity extends BaseActivity {
 
                 itemRow.setOnClickListener(v -> {
                     data.setSwitchRatio(ratio);
-                    if (table != null) {
-                        table.notifyAllChanged();
-                    }
-                    saveAllData();
+                    // 选完立即重算一次：该行每棚平均不变，料量按新比例分到两档
+                    applySwitchRatioNow(row);
                     popup.dismiss();
                 });
 
@@ -1740,26 +1739,68 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 非发酵料恰好两种时，返回粒径较大的那个列的 id；否则返回 null
-    private String getLargerNonFermentedColumn(FeedData data) {
+    // 长按换料的“较大那档”：
+    //   恰好两档有数据 → 两者中较大的（原行为）
+    //   只有一档有数据 → 它的“大一号”（粉→0.3 / 0.3→0.5 / 0.5→1.0）；只有 1.0 有数据则无处可换
+    //   0 档或 ≥3 档 → null
+    private String getSwitchTargetColumn(FeedData data) {
+        if (data == null) {
+            return null;
+        }
         int count = 0;
-        String larger = null;
-        for (String c : NF_FEED_COLUMNS) {
-            if (getFeedValueByColumn(data, c) > 0) {
+        int lastIdx = -1;
+        for (int i = 0; i < NF_FEED_COLUMNS.length; i++) {
+            if (getFeedValueByColumn(data, NF_FEED_COLUMNS[i]) > 0) {
                 count++;
-                larger = c;
+                lastIdx = i;
             }
         }
-        return count == 2 ? larger : null;
+        if (count == 2) {
+            return NF_FEED_COLUMNS[lastIdx];
+        }
+        if (count == 1) {
+            int next = lastIdx + 1;
+            return next < NF_FEED_COLUMNS.length ? NF_FEED_COLUMNS[next] : null;
+        }
+        return null;
     }
 
-    // 该料格是否为"已设置换料比例"的提示格（粒径较大的那个非发酵料）
+    // 该料格是否为"已设置换料比例"的提示格（“较大那档”）
     private boolean isSwitchRatioCell(FeedData data, String columnId) {
         if (data == null || data.getSwitchRatio() <= 0) {
             return false;
         }
-        String larger = getLargerNonFermentedColumn(data);
-        return larger != null && larger.equals(columnId);
+        String target = getSwitchTargetColumn(data);
+        return target != null && target.equals(columnId);
+    }
+
+    /**
+     * 选完换料比例后立即重算一次：把该行当前“每棚平均”钉住（平均不变），
+     * 再按新比例把总量分给两档（大一号 = 总量×ratio），派生水量/称料。
+     */
+    private void applySwitchRatioNow(int row) {
+        FeedData data = getData(row);
+        if (data == null) {
+            return;
+        }
+        double avg = data.getAverage(fermentedIncludedInAverage);
+        if (!data.isAverageManuallyModified() && avg > 0) {
+            data.setAverage(avg);
+            data.setAverageManuallyModified(true);
+        }
+        if (row == FIRST_ROW) {
+            // 第 1 行由 recomputeFirstRowRemainder() 统一处理（棚数 / 平均 / 料量）
+            recomputeFirstRowRemainder();
+        } else {
+            data.recalculateDerivedOnly(globalWaterPercentage,
+                    fermentedIncludedInWater, fermentedIncludedInAverage);
+            recomputeFirstRowRemainder();
+        }
+        if (table != null) {
+            table.notifyAllChanged();
+        }
+        updateFooterRow();
+        saveAllData();
     }
 
     // 更新所有计算
