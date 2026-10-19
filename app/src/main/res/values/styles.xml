@@ -97,6 +97,12 @@
     <!-- 无主题背景的主题（用于根布局自带背景的 Activity，避免 Overdraw） -->
     <style name="AppTheme.NoWindowBackground" parent="AppTheme">
         <item name="android:windowBackground">@null</item>
+        <!-- API 35+ 强制 edge-to-edge：以下四项仅供 API < 35 生效，
+             35+ 时由 MixCalcActivity#setupSystemBarInsets 里的两块 spacer 接管 -->
+        <item name="android:statusBarColor">#1F6B30</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 
     <!-- 数据分析活动主题，减少闪烁 -->

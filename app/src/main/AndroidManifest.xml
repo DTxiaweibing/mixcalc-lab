@@ -45,23 +45,5 @@
             android:screenOrientation="portrait"
             android:exported="false" />
 
-        <activity
-            android:name=".BasicDataActivity"
-            android:label="基础数据"
-            android:screenOrientation="portrait"
-            android:exported="false" />
-
-        <activity
-            android:name=".BatchManageActivity"
-            android:label="批次管理"
-            android:screenOrientation="portrait"
-            android:exported="false" />
-
-        <activity
-            android:name=".checkfeed.CheckFeedActivity"
-            android:label="巡塘"
-            android:screenOrientation="portrait"
-            android:exported="false" />
-
     </application>
 </manifest>

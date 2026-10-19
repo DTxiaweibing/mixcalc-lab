@@ -6,6 +6,13 @@
     android:orientation="vertical"
     android:background="#f5f5f5">
 
+    <!-- 系统栏留白：状态栏（深绿）。高度由 WindowInsets 驱动，系统已让位时为 0 -->
+    <View
+        android:id="@+id/status_bar_spacer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:background="#1F6B30" />
+
     <!-- 顶部标题 - 左20%空白 + 中60%标题 + 右20%误差 -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -60,40 +67,11 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1" />
-    <!-- 底部导航栏 -->
-    <LinearLayout
-        android:id="@+id/bottom_nav"
+    <!-- 系统栏留白：底部导航栏（白）。高度由 WindowInsets 驱动，系统已让位时为 0 -->
+    <View
+        android:id="@+id/nav_bar_spacer"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:orientation="horizontal"
-        android:background="#FFFFFF"
-        android:elevation="8dp">
-
-        <TextView
-            android:id="@+id/nav_home"
-            style="@style/BottomNavItem"
-            android:text="@string/nav_home" />
-
-        <TextView
-            android:id="@+id/nav_record"
-            style="@style/BottomNavItem"
-            android:text="@string/nav_record" />
-
-        <TextView
-            android:id="@+id/nav_check"
-            style="@style/BottomNavItem"
-            android:text="@string/nav_check" />
-
-        <TextView
-            android:id="@+id/nav_mix"
-            style="@style/BottomNavItem"
-            android:text="@string/nav_mix"
-            android:textColor="#4CAF50" />
-
-        <TextView
-            android:id="@+id/nav_my"
-            style="@style/BottomNavItem"
-            android:text="@string/nav_my" />
-    </LinearLayout>
+        android:layout_height="0dp"
+        android:background="#FFFFFF" />
 </LinearLayout>
 

@@ -17,23 +17,13 @@ import androidx.appcompat.app.AppCompatActivity;
 
 /**
  * 沙盒桩：去掉完整性校验（AppIntegrityChecker）、水印、底部导航、左右滑动切页、多语言。
- * 只保留 MixCalcActivity 实际调用到的 4 个成员。
+ * 只保留 MixCalcActivity 实际调用到的对话框能力。
  */
 public abstract class BaseActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-    }
-
-    protected void setupBottomNavigation() {
-    }
-
-    protected void enableSwipeNavigation() {
-    }
-
-    protected void showStyledConfirmDialog(String title, String message, String[] buttonTexts, int[] buttonColors, DialogInterface.OnClickListener[] listeners) {
-        showStyledConfirmDialog(title, message, buttonTexts, buttonColors, listeners, true);
     }
 
     @SuppressLint("InflateParams")
@@ -85,6 +75,4 @@ public abstract class BaseActivity extends AppCompatActivity {
         dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         dialog.show();
     }
-
-    protected abstract int getCurrentNavId();
 }

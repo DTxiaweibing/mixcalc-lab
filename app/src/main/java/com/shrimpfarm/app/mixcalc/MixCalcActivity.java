@@ -21,18 +21,20 @@ import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.PopupWindow;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 import com.shrimpfarm.app.BaseActivity;
-import com.shrimpfarm.app.BasicDataActivity;
-import com.shrimpfarm.app.BatchManageActivity;
-import com.shrimpfarm.app.DatabaseHelper;
 import com.shrimpfarm.app.R;
-import com.shrimpfarm.app.checkfeed.CheckFeedActivity;
 import com.shrimpfarm.app.mixcalc.model.FeedData;
 import com.shrimpfarm.app.mixcalc.table.CellStyle;
 import com.shrimpfarm.app.mixcalc.table.CellTextProvider;
@@ -111,10 +113,6 @@ public class MixCalcActivity extends BaseActivity {
 
     // 总数据行数
     private static final int TOTAL_ROWS = 30;
-
-    // 批次与数据库相关
-    private String currentBatchId;
-    private DatabaseHelper dbHelper;
 
     // ==================== 自绘引擎提供者 ====================
 
@@ -202,7 +200,7 @@ public class MixCalcActivity extends BaseActivity {
                 return getString(R.string.seq_stat_format, getFilledRowCount(), TOTAL_ROWS);
             }
             if ("shed_number".equals(columnId)) {
-                return getString(R.string.mix_btn_go_check);
+                return getString(R.string.mix_btn_help);
             }
             if ("weighed_feed".equals(columnId)) {
                 return getString(R.string.mix_btn_reset);
@@ -271,7 +269,7 @@ public class MixCalcActivity extends BaseActivity {
         @Override
         public void onFooterClick(String columnId) {
             if ("shed_number".equals(columnId)) {
-                prepareDataAndNavigate();
+                showHelpPanel();
             } else if ("weighed_feed".equals(columnId)) {
                 showResetConfirmationDialog();
             }
@@ -297,30 +295,12 @@ public class MixCalcActivity extends BaseActivity {
         try {
             setContentView(R.layout.activity_mix_calc);
 
-            // ---------- 批次与基础数据检查 ----------
-            SharedPreferences appPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
-            currentBatchId = appPrefs.getString("current_batch_id", "");
-            dbHelper = DatabaseHelper.getInstance(this);
+            // ---------- 系统栏留白（状态栏深绿 / 底部导航栏白），由 WindowInsets 驱动 ----------
+            setupSystemBarInsets();
 
-            if (currentBatchId.isEmpty()) {
-                showNoBatchDialog();
-                return;
-            }
-
-            if (!isBasicDataComplete()) {
-                showBasicDataIncompleteDialog();
-                return;
-            }
-
-            // 从基础数据读取池塘数量作为棚数上限
-            String pondCountStr = dbHelper.getBasicData(currentBatchId, "pond_count");
-            try {
-                shedCountLimit = Integer.parseInt(pondCountStr);
-            } catch (NumberFormatException e) {
-                shedCountLimit = 0;
-            }
-            // 保存到 SharedPreferences 供内部使用
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putInt(KEY_SHED_COUNT_LIMIT, shedCountLimit).apply();
+            // ---------- 棚数上限：本应用内持久化，不依赖数据库 ----------
+            shedCountLimit = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getInt(KEY_SHED_COUNT_LIMIT, 0);
 
             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -351,16 +331,44 @@ public class MixCalcActivity extends BaseActivity {
         } catch (Exception e) {
             Log.e(TAG, "启动异常: " + e.getMessage(), e);
         }
-
-        setupBottomNavigation();
-        if (isTabletMode) {
-            enableSwipeNavigation();
-        }
     }
 
-    @Override
-    protected int getCurrentNavId() {
-        return R.id.nav_mix;
+    /**
+     * 系统栏留白：状态栏区域涂深绿、底部导航栏区域涂白，高度取自 WindowInsets。
+     * <p>API 35+ 强制 edge-to-edge，内容会钻到系统栏底下，因此用两块 spacer 显式让开；
+     * 旧系统已由窗口自行让位（根布局在 window 里的 Y &gt; 0）时两块 spacer 归 0，
+     * 不会重复留白。</p>
+     */
+    private void setupSystemBarInsets() {
+        final View root = findViewById(R.id.main_layout);
+        final View statusSpacer = findViewById(R.id.status_bar_spacer);
+        final View navSpacer = findViewById(R.id.nav_bar_spacer);
+        if (root == null || statusSpacer == null || navSpacer == null) {
+            return;
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, wInsets) -> {
+            final Insets bars = wInsets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            v.post(() -> {
+                int[] loc = new int[2];
+                v.getLocationInWindow(loc);
+                boolean systemAlreadyInset = loc[1] > 0;
+                setSpacerHeight(statusSpacer, systemAlreadyInset ? 0 : bars.top);
+                setSpacerHeight(navSpacer, systemAlreadyInset ? 0 : bars.bottom);
+            });
+            return wInsets;
+        });
+        ViewCompat.requestApplyInsets(root);
+    }
+
+    private static void setSpacerHeight(View spacer, int heightPx) {
+        ViewGroup.LayoutParams lp = spacer.getLayoutParams();
+        if (lp == null) {
+            lp = new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, heightPx);
+        } else {
+            lp.height = heightPx;
+        }
+        spacer.setLayoutParams(lp);
     }
 
     private void initColumnNames() {
@@ -846,25 +854,6 @@ public class MixCalcActivity extends BaseActivity {
         }
 
         return dataRow.toString();
-    }
-
-    // 准备数据并跳转到查料表
-    private void prepareDataAndNavigate() {
-        try {
-            String message = formatDataToMessage();
-
-            Intent intent = new Intent(MixCalcActivity.this, CheckFeedActivity.class);
-            intent.putExtra("FEED_DATA_MESSAGE", message);
-            intent.putExtra("WATER_PERCENTAGE", globalWaterPercentage);
-            intent.putExtra("TIMESTAMP", System.currentTimeMillis());
-            intent.putExtra("SOURCE", "MAIN_ACTIVITY");
-
-            startActivity(intent);
-            finish();
-        } catch (Exception e) {
-            Log.e(TAG, "准备数据异常: " + e.getMessage());
-            Toast.makeText(this, getString(R.string.mix_toast_data_error) + e.getMessage(), Toast.LENGTH_LONG).show();
-        }
     }
 
     // 更新统计行
@@ -1942,50 +1931,41 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // ---------- 批次与基础数据检查相关方法 ----------
-    private boolean isBasicDataComplete() {
-        String seedQuantity = dbHelper.getBasicData(currentBatchId, "seed_quantity");
-        String pondCount = dbHelper.getBasicData(currentBatchId, "pond_count");
-        String pondLength = dbHelper.getBasicData(currentBatchId, "pond_length");
-        String aeratorCount = dbHelper.getBasicData(currentBatchId, "aerator_count");
-        String aerationPower = dbHelper.getBasicData(currentBatchId, "aeration_power");
-        String stockingDate = dbHelper.getBasicData(currentBatchId, "stocking_date");
-        String feedBrand = dbHelper.getBasicData(currentBatchId, "feed_brand");
+    // ==================== 帮助面板（棚数上限 + 操作手册） ====================
 
-        return !seedQuantity.isEmpty() &&
-               !pondCount.isEmpty() &&
-               !pondLength.isEmpty() &&
-               !aeratorCount.isEmpty() &&
-               !aerationPower.isEmpty() &&
-               !stockingDate.isEmpty() &&
-               !stockingDate.equals(getString(R.string.main_select_date)) &&
-               !feedBrand.isEmpty();
-    }
+    @android.annotation.SuppressLint("InflateParams")
+    private void showHelpPanel() {
+        try {
+            final SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
 
-    private void showNoBatchDialog() {
-        showStyledConfirmDialog(getString(R.string.main_title_tip), getString(R.string.mix_msg_no_batch),
-            new String[]{getString(R.string.mix_btn_exit), getString(R.string.mix_btn_create)},
-            new int[]{0xFF666666, 0xFF4CAF50},
-            new DialogInterface.OnClickListener[]{
-                (dialog, which) -> finish(),
-                (dialog, which) -> {
-                    startActivity(new Intent(MixCalcActivity.this, BatchManageActivity.class));
-                    finish();
-                }
-            });
-    }
+            View panel = LayoutInflater.from(this).inflate(R.layout.dialog_mix_help, null);
+            final EditText etShedCount = panel.findViewById(R.id.et_shed_count);
+            int saved = prefs.getInt(KEY_SHED_COUNT_LIMIT, 0);
+            if (saved > 0) {
+                etShedCount.setText(String.valueOf(saved));
+                etShedCount.setSelection(etShedCount.getText().length());
+            }
 
-    private void showBasicDataIncompleteDialog() {
-        showStyledConfirmDialog(getString(R.string.main_title_tip), getString(R.string.main_msg_complete_basic_data),
-            new String[]{getString(R.string.btn_cancel), getString(R.string.main_go_setting)},
-            new int[]{0xFF666666, 0xFF4CAF50},
-            new DialogInterface.OnClickListener[]{
-                (dialog, which) -> finish(),
-                (dialog, which) -> {
-                    startActivity(new Intent(MixCalcActivity.this, BasicDataActivity.class));
-                    finish();
-                }
-            });
+            new androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.mix_help_title)
+                    .setView(panel)
+                    .setPositiveButton(R.string.btn_ok, (dialog, which) -> {
+                        String text = etShedCount.getText() == null
+                                ? "" : etShedCount.getText().toString().trim();
+                        int value = 0;
+                        try {
+                            value = text.isEmpty() ? 0 : Integer.parseInt(text);
+                        } catch (NumberFormatException ignored) {
+                        }
+                        prefs.edit().putInt(KEY_SHED_COUNT_LIMIT, value).apply();
+                        shedCountLimit = value;
+                        updateFooterRow();
+                    })
+                    .setNegativeButton(R.string.btn_cancel, null)
+                    .show();
+        } catch (Exception e) {
+            Log.e(TAG, "打开帮助面板异常: " + e.getMessage());
+        }
     }
 
     // ==================== 列设置弹出菜单 ====================

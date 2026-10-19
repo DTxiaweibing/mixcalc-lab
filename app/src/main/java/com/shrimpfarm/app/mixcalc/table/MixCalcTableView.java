@@ -51,6 +51,14 @@ public class MixCalcTableView extends ViewGroup {
     private final int maxFlingVelocity;
     private final int longPressTimeout;
 
+    /**
+     * fling 使用的边界远大于实际内容范围，避免 OverScroller 触发它的
+     * "startAfterEdge / cubic 落边" 路径 —— 正是那条曲线在快到边界时
+     * 给人「被磁铁吸一下」的手感。越界由 {@link #scrollByTable} 逐帧夹住，
+     * 撞到真实边界立即 forceFinished 硬停，减速曲线本身完全不变。
+     */
+    private static final int FLING_UNBOUNDED = 1 << 28;
+
     private VelocityTracker velocityTracker;
     private int offsetX;
     private int offsetY;
@@ -302,10 +310,17 @@ public class MixCalcTableView extends ViewGroup {
     @Override
     public void computeScroll() {
         if (scroller.computeScrollOffset()) {
-            offsetX = scroller.getCurrX();
-            offsetY = scroller.getCurrY();
-            onOffsetChanged();
-            postInvalidateOnAnimation();
+            int dx = scroller.getCurrX() - offsetX;
+            int dy = scroller.getCurrY() - offsetY;
+            boolean beyond = offsetX + dx < 0 || offsetX + dx > metrics.maxScrollX
+                    || offsetY + dy < 0 || offsetY + dy > metrics.maxScrollY;
+            scrollByTable(dx, dy);
+            if (beyond) {
+                // 已经顶到真实边界：立即停住，不做任何落边缓冲
+                scroller.forceFinished(true);
+            } else {
+                postInvalidateOnAnimation();
+            }
         }
     }
 
@@ -392,7 +407,8 @@ public class MixCalcTableView extends ViewGroup {
                         int vy = (int) velocityTracker.getYVelocity();
                         if (Math.abs(vx) > minFlingVelocity || Math.abs(vy) > minFlingVelocity) {
                             scroller.fling(offsetX, offsetY, -vx, -vy,
-                                    0, metrics.maxScrollX, 0, metrics.maxScrollY);
+                                    -FLING_UNBOUNDED, FLING_UNBOUNDED,
+                                    -FLING_UNBOUNDED, FLING_UNBOUNDED);
                             postInvalidateOnAnimation();
                         }
                     }
