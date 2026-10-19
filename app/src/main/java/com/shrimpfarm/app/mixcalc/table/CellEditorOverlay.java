@@ -128,6 +128,10 @@ class CellEditorOverlay {
         if (!editText.hasFocus()) {
             editText.requestFocus();
         }
+        OnCellEditListener listener = table.editListener();
+        if (listener != null) {
+            listener.onCellEditBegin(row, column.id);
+        }
         showIme();
     }
 

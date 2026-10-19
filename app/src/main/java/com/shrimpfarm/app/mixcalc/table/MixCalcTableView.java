@@ -524,7 +524,7 @@ public class MixCalcTableView extends ViewGroup {
             editor.end();
             int vi = metrics.visualIndexAt(x, offsetX);
             if (vi >= 0 && tapListener != null) {
-                tapListener.onHeaderClick(metrics.visual.get(vi).id);
+                tapListener.onHeaderClick(metrics.visual.get(vi).id, getHeaderRect(metrics.visual.get(vi).id));
             }
             return;
         }

@@ -398,6 +398,46 @@ public class FeedData {
         }
     }
 
+    /**
+     * 换料完成：恰好两档非发酵料、且被清空的是粒径较小那档时，把 {@code amount}
+     * （进入编辑那一刻该格的原值）并入较大那档，本档清零。
+     *
+     * <p>用调用方传入的原值而非当前值：编辑浮层逐字符提交，退格清空到最后一位时
+     * 单元格早已被改小，只有编辑前的快照才是真正的"细粒径料数值"。</p>
+     *
+     * <p>合并后只剩一档，换料比例随之作废，即「除发酵料外只有一种料」的换料完成状态。
+     * 总量守恒，平均吃料 / 水量 / 称料都不变。</p>
+     *
+     * @param clearedIndex 被清空的非发酵料下标（0=粉 / 1=0.3 / 2=0.5 / 3=1.0）
+     * @param amount       并入较大那档的数值
+     * @return 并入的数值；条件不满足未合并返回 0
+     */
+    public double mergeSmallerWhenCleared(int clearedIndex, double amount) {
+        if (clearedIndex < NF_POWDER || clearedIndex > NF_FEED10 || amount <= 0) {
+            return 0;
+        }
+        int coarserIndex = -1;
+        int coarserCount = 0;
+        for (int i = 0; i <= NF_FEED10; i++) {
+            if (i == clearedIndex || getNonFermentedValue(i) <= 0) {
+                continue;
+            }
+            if (i < clearedIndex) {
+                // 还有更细的一档有料：不满足"细粒径退场 → 换料完成"
+                return 0;
+            }
+            coarserIndex = i;
+            coarserCount++;
+        }
+        if (coarserCount != 1) {
+            return 0;
+        }
+        setNonFermentedValue(coarserIndex, getNonFermentedValue(coarserIndex) + amount);
+        setNonFermentedValue(clearedIndex, 0);
+        switchRatio = 0;
+        return amount;
+    }
+
     public String getShedNumber() {
         return shedNumber != null ? shedNumber : "";
     }

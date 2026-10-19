@@ -68,8 +68,6 @@ public class MixCalcActivity extends BaseActivity {
     private static final String KEY_FERMENTED_INCLUDED_IN_WATER = "fermented_included_in_water";
     private static final String KEY_FERMENTED_INCLUDED_IN_AVERAGE = "fermented_included_in_average";
 
-    private static final String KEY_SHED_COUNT_LIMIT = "shed_count_limit";
-
     // 视图组件
     private MixCalcTableView table;
     private TableColumnConfig tableConfig;
@@ -83,9 +81,10 @@ public class MixCalcActivity extends BaseActivity {
     private boolean fermentedIncludedInWater = false;
     private boolean fermentedIncludedInAverage = false;
 
-    // 棚数限制相关变量
-    private int shedCountLimit = 0;
-    private boolean isShedCountExceeded = false;
+    // 正在编辑的格 + 进入编辑那一刻的原值（浮层逐字符提交，退格清空需要它还原原值）
+    private int editBeginRow = -1;
+    private String editBeginColumn;
+    private double editBeginValue;
 
     // 列管理
     private final Map<String, Boolean> columnVisibility = new HashMap<String, Boolean>();
@@ -173,10 +172,7 @@ public class MixCalcActivity extends BaseActivity {
                 return CellStyle.STATE_NORMAL;
             }
             if ("shed_count".equals(columnId)) {
-                if (data.getShedCount() > 0 && isShedCountExceeded) {
-                    return CellStyle.STATE_WARNING;
-                }
-                // 第 1 行：基数被后面各行扣光（≤0）时同样标警告色
+                // 第 1 行：基数被后面各行扣光（≤0）时标警告色
                 if (row == FIRST_ROW && data.getShedCountBase() > 0
                         && data.getShedCount() <= 0) {
                     return CellStyle.STATE_WARNING;
@@ -259,11 +255,11 @@ public class MixCalcActivity extends BaseActivity {
         }
 
         @Override
-        public void onHeaderClick(String columnId) {
+        public void onHeaderClick(String columnId, Rect cellRect) {
             if ("water".equals(columnId)) {
-                showWaterPercentageDialog();
+                showWaterPercentageDialog(cellRect);
             } else if ("fermented".equals(columnId)) {
-                showFermentedCalculationDialog();
+                showFermentedCalculationDialog(cellRect);
             }
         }
 
@@ -271,7 +267,7 @@ public class MixCalcActivity extends BaseActivity {
         public void onHeaderLongPress(String columnId, Rect cellRect) {
             int idx = getColumnIndex(columnId);
             if (idx >= 0) {
-                showColumnOperationMenu(idx, columnId);
+                showColumnOperationMenu(idx, columnId, cellRect);
             }
         }
 
@@ -286,6 +282,14 @@ public class MixCalcActivity extends BaseActivity {
     };
 
     private final OnCellEditListener editListener = new OnCellEditListener() {
+        @Override
+        public void onCellEditBegin(int row, String columnId) {
+            FeedData data = getData(row);
+            editBeginRow = row;
+            editBeginColumn = columnId;
+            editBeginValue = data == null ? 0 : getFeedValueByColumn(data, columnId);
+        }
+
         @Override
         public void onCellCommitted(int row, String columnId, String text) {
             commitCell(row, columnId, text);
@@ -306,10 +310,6 @@ public class MixCalcActivity extends BaseActivity {
 
             // ---------- 系统栏留白（状态栏深绿 / 底部导航栏白），由 WindowInsets 驱动 ----------
             setupSystemBarInsets();
-
-            // ---------- 棚数上限：本应用内持久化，不依赖数据库 ----------
-            shedCountLimit = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                    .getInt(KEY_SHED_COUNT_LIMIT, 0);
 
             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -514,6 +514,24 @@ public class MixCalcActivity extends BaseActivity {
             default: {
                 double v = parseDouble(value);
                 data.setAverageManuallyModified(false);
+                int nfIndex = nonFermentedIndex(columnId);
+                if (v == 0 && nfIndex >= 0) {
+                    // 用进入编辑那一刻的原值（浮层逐字符提交，退格清空到最后一位时
+                    // 模型中只剩最后一位数字，不能拿它当"细粒径料的数值"）
+                    double origin = (row == editBeginRow && columnId.equals(editBeginColumn))
+                            ? editBeginValue : getFeedValueByColumn(data, columnId);
+                    if (data.mergeSmallerWhenCleared(nfIndex, origin) > 0) {
+                        // 细粒径料并入粗粒径料 → 只剩一档，换料完成
+                        editBeginValue = 0;
+                        showStyledConfirmDialog70(
+                                getString(R.string.mix_dialog_switch_done_title),
+                                getString(R.string.mix_dialog_switch_done_msg),
+                                new String[]{getString(R.string.btn_ok)},
+                                new int[]{0xFF2E7D32},
+                                new DialogInterface.OnClickListener[]{null});
+                        break;
+                    }
+                }
                 switch (columnId) {
                     case "fermented":
                         data.setFermentedFeed(v);
@@ -578,7 +596,6 @@ public class MixCalcActivity extends BaseActivity {
         }
         updateFooterRow();
         saveAllData();
-        checkShedCountLimitAndUpdateInput();
     }
 
     /**
@@ -697,12 +714,11 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // ==================== 生命周期 / 棚数限制 ====================
+    // ==================== 生命周期 ====================
 
     @Override
     protected void onResume() {
         super.onResume();
-        checkShedCountLimitAndUpdateInput();
     }
 
     @Override
@@ -729,32 +745,6 @@ public class MixCalcActivity extends BaseActivity {
         isTabletMode = isTabletDevice(this);
         initTabletAdaptiveSettings();
         rebuildCompleteTable();
-    }
-
-    // 检查棚数限制并更新输入状态
-    private void checkShedCountLimitAndUpdateInput() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            shedCountLimit = prefs.getInt(KEY_SHED_COUNT_LIMIT, 0);
-
-            boolean newExceedStatus = false;
-            if (shedCountLimit > 0 && dataList != null) {
-                double totalShedCount = 0;
-                for (FeedData data : dataList) {
-                    totalShedCount += data.getShedCount();
-                }
-                newExceedStatus = totalShedCount > shedCountLimit;
-            }
-
-            if (newExceedStatus != isShedCountExceeded) {
-                isShedCountExceeded = newExceedStatus;
-                if (table != null) {
-                    table.notifyAllChanged();
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "检查棚数限制异常: " + e.getMessage());
-        }
     }
 
     // ==================== 数据格式化 / 跳转 ====================
@@ -985,7 +975,6 @@ public class MixCalcActivity extends BaseActivity {
             footerTotals.put("average_feed",
                     validAverageCount > 0 ? totalAverageFeed / validAverageCount : 0);
 
-            checkShedCountLimitAndUpdateInput();
             updateErrorDisplay();
             if (table != null) {
                 table.notifyAllChanged();
@@ -1467,8 +1456,88 @@ public class MixCalcActivity extends BaseActivity {
         dialog.show();
     }
 
+    /**
+     * 表头弹窗：用 PopupWindow 锚在被点表头单元格的左下角，与"换料比例"弹窗位置一致。
+     *
+     * <p>Dialog 的窗口默认 gravity 为 CENTER，改 NO_GRAVITY 会被系统重新居中，
+     * 只有 PopupWindow.showAtLocation 能稳定贴住单元格。</p>
+     *
+     * @param cellRect 表头单元格在表格视图内坐标
+     */
+    private void showAnchoredListDialog(String title, String[] items, Rect cellRect,
+                                        final DialogInterface.OnClickListener listener) {
+        try {
+            LinearLayout container = new LinearLayout(this);
+            container.setOrientation(LinearLayout.VERTICAL);
+            container.setBackgroundResource(R.drawable.bg_dialog);
+
+            TextView tvTitle = new TextView(this);
+            tvTitle.setText(title);
+            tvTitle.setTextSize(18);
+            tvTitle.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
+            tvTitle.setTextColor(0xFF000000);
+            tvTitle.setGravity(Gravity.CENTER);
+            tvTitle.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(12));
+            container.addView(tvTitle);
+
+            container.addView(createDivider());
+
+            final PopupWindow popup = new PopupWindow(container);
+            popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            popup.setOutsideTouchable(true);
+            popup.setFocusable(true);
+            popup.setElevation(10);
+
+            for (int i = 0; i < items.length; i++) {
+                final int index = i;
+                TextView itemTv = new TextView(this);
+                itemTv.setLayoutParams(new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(40)));
+                itemTv.setText(items[i]);
+                itemTv.setTextSize(15);
+                itemTv.setTextColor(0xFF333333);
+                itemTv.setGravity(Gravity.CENTER);
+                itemTv.setClickable(true);
+                itemTv.setFocusable(true);
+                itemTv.setOnClickListener(v -> {
+                    popup.dismiss();
+                    if (listener != null) {
+                        // DialogInterface 参数传 null：各调用方都不使用该参数（关闭由 PopupWindow 负责）
+                        listener.onClick(null, index);
+                    }
+                });
+                container.addView(itemTv);
+                if (i < items.length - 1) {
+                    container.addView(createDivider());
+                }
+            }
+
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            popup.setWidth(Math.min(dm.widthPixels, dpToPx(180)));
+            popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+
+            int[] loc = new int[2];
+            if (table != null) {
+                table.getLocationOnScreen(loc);
+            }
+            int x = loc[0] + (cellRect != null ? cellRect.left : 0);
+            int y = loc[1] + (cellRect != null ? cellRect.bottom : 0);
+            popup.showAtLocation(table, Gravity.NO_GRAVITY, x, y);
+        } catch (Exception e) {
+            Log.e(TAG, "showAnchoredListDialog: " + e.getMessage(), e);
+        }
+    }
+
+    private View createDivider() {
+        View divider = new View(this);
+        divider.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        divider.setBackgroundColor(0xFFE0E0E0);
+        return divider;
+    }
+
     // 显示发酵料计算设置的对话框（四个选项）
-    private void showFermentedCalculationDialog() {
+    private void showFermentedCalculationDialog(Rect cellRect) {
         try {
             String[] options = new String[4];
 
@@ -1491,7 +1560,7 @@ public class MixCalcActivity extends BaseActivity {
                 options[3] = "● " + excAvg;
             }
 
-            showStyledListDialog(getString(R.string.mix_title_fermented_setting), options, (dialog, which) -> {
+            showAnchoredListDialog(getString(R.string.mix_title_fermented_setting), options, cellRect, (dialog, which) -> {
                 boolean needRefresh = false;
 
                 switch (which) {
@@ -1729,6 +1798,16 @@ public class MixCalcActivity extends BaseActivity {
         return false;
     }
 
+    /** 非发酵料列下标（0=粉 / 1=0.3 / 2=0.5 / 3=1.0），非非发酵料列返回 -1。 */
+    private int nonFermentedIndex(String columnId) {
+        for (int i = 0; i < NF_FEED_COLUMNS.length; i++) {
+            if (NF_FEED_COLUMNS[i].equals(columnId)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private double getFeedValueByColumn(FeedData data, String columnId) {
         switch (columnId) {
             case "powder": return data.getPowderFeed();
@@ -1903,7 +1982,7 @@ public class MixCalcActivity extends BaseActivity {
 
     // ==================== 列操作 ====================
 
-    private void showColumnOperationMenu(final int columnIndex, final String columnId) {
+    private void showColumnOperationMenu(final int columnIndex, final String columnId, final Rect cellRect) {
         try {
             boolean isVisible = columnVisibility.get(columnId);
             boolean isFixed = columnFixed.get(columnId);
@@ -1927,7 +2006,7 @@ public class MixCalcActivity extends BaseActivity {
 
             final String[] items = menuItems.toArray(new String[0]);
 
-            showStyledListDialog(getString(R.string.mix_menu_col_op) + " - " + columnNames[columnIndex], items, (dialog, which) -> {
+            showAnchoredListDialog(getString(R.string.mix_menu_col_op) + " - " + columnNames[columnIndex], items, cellRect, (dialog, which) -> {
                 handleColumnOperation(columnIndex, columnId, items[which]);
             });
 
@@ -2010,7 +2089,7 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    private void showWaterPercentageDialog() {
+    private void showWaterPercentageDialog(Rect cellRect) {
         try {
             final String[] percentages = {"10", "15", "20", "25", "30", "35", "40"};
             final String[] displayTexts = new String[percentages.length];
@@ -2018,7 +2097,7 @@ public class MixCalcActivity extends BaseActivity {
                 displayTexts[j] = getString(R.string.water_percentage_header, Integer.parseInt(percentages[j]));
             }
 
-            showStyledListDialog(getString(R.string.mix_title_water_pct), displayTexts, (dialog, which) -> {
+            showAnchoredListDialog(getString(R.string.mix_title_water_pct), displayTexts, cellRect, (dialog, which) -> {
                 try {
                     globalWaterPercentage = Integer.parseInt(percentages[which]);
                     saveGlobalWaterPercentage();
@@ -2065,38 +2144,14 @@ public class MixCalcActivity extends BaseActivity {
 
     // ==================== 帮助面板（棚数上限 + 操作手册） ====================
 
-    @android.annotation.SuppressLint("InflateParams")
+    // 帮助入口：直接打开 assets/help 下的 HTML 使用帮助页
     private void showHelpPanel() {
         try {
-            final SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-
-            View panel = LayoutInflater.from(this).inflate(R.layout.dialog_mix_help, null);
-            final EditText etShedCount = panel.findViewById(R.id.et_shed_count);
-            int saved = prefs.getInt(KEY_SHED_COUNT_LIMIT, 0);
-            if (saved > 0) {
-                etShedCount.setText(String.valueOf(saved));
-                etShedCount.setSelection(etShedCount.getText().length());
-            }
-
-            new androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle(R.string.mix_help_title)
-                    .setView(panel)
-                    .setPositiveButton(R.string.btn_ok, (dialog, which) -> {
-                        String text = etShedCount.getText() == null
-                                ? "" : etShedCount.getText().toString().trim();
-                        int value = 0;
-                        try {
-                            value = text.isEmpty() ? 0 : Integer.parseInt(text);
-                        } catch (NumberFormatException ignored) {
-                        }
-                        prefs.edit().putInt(KEY_SHED_COUNT_LIMIT, value).apply();
-                        shedCountLimit = value;
-                        updateFooterRow();
-                    })
-                    .setNegativeButton(R.string.btn_cancel, null)
-                    .show();
+            Intent intent = new Intent(this, com.shrimpfarm.app.AssetWebViewActivity.class);
+            intent.putExtra(com.shrimpfarm.app.AssetWebViewActivity.EXTRA_ASSET_PATH, "help/index.html");
+            startActivity(intent);
         } catch (Exception e) {
-            Log.e(TAG, "打开帮助面板异常: " + e.getMessage());
+            Log.e(TAG, "打开帮助页异常: " + e.getMessage());
         }
     }
 

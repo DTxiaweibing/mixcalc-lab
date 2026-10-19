@@ -301,6 +301,8 @@
     <string name="mix_toast_no_change">设置未改变</string>
     <string name="mix_toast_setting_fail">设置失败</string>
     <string name="mix_toast_reset_done">所有数据已重置</string>
+    <string name="mix_dialog_switch_done_title">换料完成</string>
+    <string name="mix_dialog_switch_done_msg">细粒径料合并到粗粒径料，换料完成</string>
     <string name="mix_toast_dismiss_download">不再提示下载</string>
     <string name="mix_toast_link_copied">链接已复制到剪贴板</string>
     <string name="mix_toast_download_fail">无法显示下载提示</string>
@@ -1174,11 +1176,6 @@
 
     <!-- 混料计算器：帮助面板 -->
     <string name="mix_btn_help">帮助</string>
-    <string name="mix_help_title">帮助与棚数设置</string>
-    <string name="mix_help_shed_count_label">总棚数（各行棚数之和超出时表格会提示）</string>
-    <string name="mix_help_shed_count_hint">输入总棚数，留空表示不限制</string>
-    <string name="mix_help_manual_title">操作手册</string>
-    <string name="mix_help_manual">【列说明】\n· 序号：固定第一列，不可编辑\n· 棚号：可填编号，留空按序号显示\n· 棚数：该行代表的棚数，平均与合计都按它计算\n· 平均吃料：各料相加后除以棚数，发酵料是否计入可在表头切换\n· 发酵 / 粉料 / 03 / 05 / 10：各类料的量\n· 水量：按水比自动算出，点表头可改水比\n· 称料：全部料相加后除以棚数\n\n【手势】\n· 点格子：编辑该格\n· 点表头水比：修改水比\n· 点表头发酵：查看发酵料计入选项\n· 长按表头：列操作菜单，可隐藏、固定、显示全部、取消固定\n· 长按大料格：打开换料比例抽屉\n· 点表尾帮助：打开本面板\n· 点表尾复位：清空全部数据\n\n【棚数上限】\n在这里输入总棚数，各行棚数之和超出时会给出提示；留空表示不限制。</string>
 </resources>
 
 

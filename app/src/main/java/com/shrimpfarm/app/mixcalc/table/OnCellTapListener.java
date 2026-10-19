@@ -16,7 +16,7 @@ public interface OnCellTapListener {
     void onCellLongPress(int row, String columnId, Rect cellRect);
 
     /** 表头单击（水列 → 水百分比弹窗；发酵料列 → 计算方式弹窗）。 */
-    void onHeaderClick(String columnId);
+    void onHeaderClick(String columnId, Rect cellRect);
 
     /** 表头长按（列操作菜单：固定 / 隐藏 / 全部显示 / 取消全部固定）。 */
     void onHeaderLongPress(String columnId, Rect cellRect);
