@@ -54,8 +54,8 @@ public class MixCalcTableView extends ViewGroup {
     /**
      * fling 使用的边界远大于实际内容范围，避免 OverScroller 触发它的
      * "startAfterEdge / cubic 落边" 路径 —— 正是那条曲线在快到边界时
-     * 给人「被磁铁吸一下」的手感。越界由 {@link #scrollByTable} 逐帧夹住，
-     * 撞到真实边界立即 forceFinished 硬停，减速曲线本身完全不变。
+     * 给人「被磁铁吸一下」的手感。真实边界由 {@link #computeScroll()}
+     * 逐轴夹住，两个方向都滑不动时结束惯性，不做任何落边缓冲。
      */
     private static final int FLING_UNBOUNDED = 1 << 28;
 
@@ -365,14 +365,11 @@ public class MixCalcTableView extends ViewGroup {
         if (scroller.computeScrollOffset()) {
             int dx = scroller.getCurrX() - offsetX;
             int dy = scroller.getCurrY() - offsetY;
-            boolean beyond = offsetX + dx < 0 || offsetX + dx > metrics.maxScrollX
-                    || offsetY + dy < 0 || offsetY + dy > metrics.maxScrollY;
-            scrollByTable(dx, dy);
-            if (beyond) {
-                // 已经顶到真实边界：立即停住，不做任何落边缓冲
-                scroller.forceFinished(true);
-            } else {
+            if (scrollByTable(dx, dy)) {
                 postInvalidateOnAnimation();
+            } else {
+                // 每个方向都已顶到真实边界且位移为 0：惯性到此为止
+                scroller.forceFinished(true);
             }
         }
     }
@@ -397,6 +394,30 @@ public class MixCalcTableView extends ViewGroup {
     private void clampOffsets() {
         offsetX = clamp(offsetX, 0, metrics.maxScrollX);
         offsetY = clamp(offsetY, 0, metrics.maxScrollY);
+    }
+
+    /**
+     * 把手指速度截到「沿该方向刚好滑完剩余距离」的速度。
+     *
+     * <p>表格可滚动距离远小于快速甩动的 spline 规划距离（6000px/s 就规划了
+     * 近 2000px），不封顶则几帧内撞到真实边界，观感是「离手即停」。封顶后
+     * 快速滑动走完整条自然减速曲线，滑到尽头时速度恰好衰减为 0。</p>
+     *
+     * <p>反解自 OverScroller 的 spline 距离公式（density / 摩擦系数与之保持
+     * 一致）：{@code distance = ref * exp(K * ln(0.35 * v / ref))}。</p>
+     */
+    private int capFlingVelocity(int velocity, int runwayPx) {
+        if (velocity == 0 || runwayPx <= 0) {
+            return 0;
+        }
+        float ref = ViewConfiguration.getScrollFriction()
+                * 9.80665f * 39.37f * 0.84f
+                * getResources().getDisplayMetrics().density * 160f;
+        double decelerationRate = Math.log(0.78) / Math.log(0.9);
+        double limit = ref / 0.35 * Math.exp(Math.log(runwayPx / ref)
+                * (decelerationRate - 1.0) / decelerationRate);
+        int capped = (int) Math.min(Math.abs((double) velocity), limit);
+        return velocity > 0 ? capped : -capped;
     }
 
     // ------------------------------------------------------------------
@@ -459,10 +480,17 @@ public class MixCalcTableView extends ViewGroup {
                         int vx = (int) velocityTracker.getXVelocity();
                         int vy = (int) velocityTracker.getYVelocity();
                         if (Math.abs(vx) > minFlingVelocity || Math.abs(vy) > minFlingVelocity) {
-                            scroller.fling(offsetX, offsetY, -vx, -vy,
-                                    -FLING_UNBOUNDED, FLING_UNBOUNDED,
-                                    -FLING_UNBOUNDED, FLING_UNBOUNDED);
-                            postInvalidateOnAnimation();
+                            int flingX = capFlingVelocity(vx,
+                                    vx > 0 ? offsetX : metrics.maxScrollX - offsetX);
+                            int flingY = capFlingVelocity(vy,
+                                    vy > 0 ? offsetY : metrics.maxScrollY - offsetY);
+                            if (Math.abs(flingX) > minFlingVelocity
+                                    || Math.abs(flingY) > minFlingVelocity) {
+                                scroller.fling(offsetX, offsetY, -flingX, -flingY,
+                                        -FLING_UNBOUNDED, FLING_UNBOUNDED,
+                                        -FLING_UNBOUNDED, FLING_UNBOUNDED);
+                                postInvalidateOnAnimation();
+                            }
                         }
                     }
                 } else if (!longPressFired) {
