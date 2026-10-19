@@ -28,22 +28,15 @@
         tools:ignore="LockedOrientationActivity">
 
         <activity
-            android:name=".MainActivity"
-            android:theme="@android:style/Theme.NoTitleBar"
-            android:label="秒算虾料"
+            android:name=".mixcalc.MixCalcActivity"
+            android:theme="@style/AppTheme.NoWindowBackground"
+            android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <activity
-            android:name=".mixcalc.MixCalcActivity"
-            android:theme="@style/AppTheme.NoWindowBackground"
-            android:label="混料计算器"
-            android:screenOrientation="portrait"
-            android:exported="false" />
 
         <activity
             android:name=".AssetWebViewActivity"

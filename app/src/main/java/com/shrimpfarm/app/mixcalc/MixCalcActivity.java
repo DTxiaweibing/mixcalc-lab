@@ -19,11 +19,9 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ListView;
 import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -1427,31 +1425,6 @@ public class MixCalcActivity extends BaseActivity {
 
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
         dialog.getWindow().setLayout((int)(screenWidth * 0.7), ViewGroup.LayoutParams.WRAP_CONTENT);
-        dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-        dialog.show();
-    }
-
-    @android.annotation.SuppressLint("InflateParams")
-    private void showStyledListDialog(String title, String[] items, final DialogInterface.OnClickListener listener) {
-        Dialog dialog = new Dialog(this);
-        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_simple_list, null);
-        dialog.setContentView(dialogView);
-
-        TextView tvTitle = dialogView.findViewById(R.id.tv_title);
-        tvTitle.setText(title);
-
-        ListView listView = dialogView.findViewById(R.id.list_view);
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, items);
-        listView.setAdapter(adapter);
-        listView.setOnItemClickListener((parent, view, which, id) -> {
-            if (listener != null) {
-                listener.onClick(dialog, which);
-            }
-            dialog.dismiss();
-        });
-
-        int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        dialog.getWindow().setLayout(screenWidth / 2, ViewGroup.LayoutParams.WRAP_CONTENT);
         dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         dialog.show();
     }

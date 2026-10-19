@@ -1,44 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 默认值（手机） -->
     <dimen name="title_height">40dp</dimen>
     <dimen name="title_text_size">20sp</dimen>
-
-    <!-- ==================== 单据明细列宽 ==================== -->
-    <dimen name="po_col_cat">56dp</dimen>
-    <dimen name="po_col_name">96dp</dimen>
-    <dimen name="po_col_spec">80dp</dimen>
-    <dimen name="po_col_price">58dp</dimen>
-    <dimen name="po_col_change">52dp</dimen>
-    <dimen name="po_col_qty">52dp</dimen>
-    <dimen name="po_col_amount">68dp</dimen>
-    <!-- 明细表横向总宽，便于两侧同步滚动 -->
-    <dimen name="po_table_width">518dp</dimen>
-
-    <!-- 进货开单 8 列编辑网格 -->
-    <dimen name="po_edit_cat">84dp</dimen>
-    <dimen name="po_edit_name">140dp</dimen>
-    <dimen name="po_edit_spec">92dp</dimen>
-    <dimen name="po_edit_history">62dp</dimen>
-    <dimen name="po_edit_current">62dp</dimen>
-    <dimen name="po_edit_change">56dp</dimen>
-    <dimen name="po_edit_qty">62dp</dimen>
-    <dimen name="po_edit_amount">76dp</dimen>
-    <dimen name="po_edit_del">34dp</dimen>
-    <dimen name="po_edit_row_h">40dp</dimen>
-    <dimen name="po_edit_table_w">668dp</dimen>
-
-    <!-- 动保开单：八列横向网格（宽度对齐进货开单页，已实机验证） -->
-    <dimen name="tk_edit_cat">84dp</dimen>
-    <dimen name="tk_edit_name">140dp</dimen>
-    <dimen name="tk_edit_spec">92dp</dimen>
-    <dimen name="tk_edit_history">62dp</dimen>
-    <dimen name="tk_edit_current">62dp</dimen>
-    <dimen name="tk_edit_change">56dp</dimen>
-    <dimen name="tk_edit_qty">62dp</dimen>
-    <dimen name="tk_edit_amount">76dp</dimen>
-    <dimen name="tk_edit_del">34dp</dimen>
-    <dimen name="tk_edit_row_h">40dp</dimen>
-    <dimen name="tk_edit_table_w">668dp</dimen>
 </resources>
-
