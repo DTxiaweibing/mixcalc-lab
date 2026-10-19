@@ -1,0 +1,4898 @@
+diff --git a/app/src/main/java/com/shrimpfarm/app/mixcalc/MixCalcActivity.java b/app/src/main/java/com/shrimpfarm/app/mixcalc/MixCalcActivity.java
+index 87e1efd..25857ef 100644
+--- a/app/src/main/java/com/shrimpfarm/app/mixcalc/MixCalcActivity.java
++++ b/app/src/main/java/com/shrimpfarm/app/mixcalc/MixCalcActivity.java
+@@ -1,49 +1,32 @@
+ package com.shrimpfarm.app.mixcalc;
+ 
+-import android.annotation.SuppressLint;
+-import android.app.Activity;
+-import android.app.AlertDialog;
+ import android.app.Dialog;
+ import android.content.Context;
+ import android.content.DialogInterface;
+ import android.content.Intent;
+ import android.content.SharedPreferences;
+ import android.graphics.Color;
++import android.graphics.Rect;
+ import android.graphics.Typeface;
+-import android.graphics.drawable.Drawable;
+ import android.net.Uri;
+ import android.os.Bundle;
+ import android.os.Handler;
+-import android.text.Editable;
+ import android.text.InputType;
+-import android.text.TextWatcher;
+ import android.util.DisplayMetrics;
+ import android.util.Log;
+ import android.view.Gravity;
+-import android.view.KeyEvent;
+ import android.view.LayoutInflater;
+-import android.view.MotionEvent;
+ import android.view.View;
+ import android.view.ViewGroup;
+-import android.view.ViewParent;
+-import android.view.ViewTreeObserver;
+-import android.view.inputmethod.EditorInfo;
+ import android.view.inputmethod.InputMethodManager;
+ import android.widget.ArrayAdapter;
+ import android.widget.Button;
+-import android.widget.EditText;
+-import android.widget.HorizontalScrollView;
+ import android.widget.LinearLayout;
+ import android.widget.ListView;
+-import android.widget.ScrollView;
+-import android.widget.TextView;
+ import android.widget.PopupWindow;
++import android.widget.TextView;
+ import android.widget.Toast;
+ 
+-import androidx.core.content.ContextCompat;
+-import androidx.core.view.ViewCompat;
+-import androidx.core.view.WindowInsetsCompat;
+-
+ import com.shrimpfarm.app.BaseActivity;
+ import com.shrimpfarm.app.BasicDataActivity;
+ import com.shrimpfarm.app.BatchManageActivity;
+@@ -51,6 +34,13 @@ import com.shrimpfarm.app.DatabaseHelper;
+ import com.shrimpfarm.app.R;
+ import com.shrimpfarm.app.checkfeed.CheckFeedActivity;
+ import com.shrimpfarm.app.mixcalc.model.FeedData;
++import com.shrimpfarm.app.mixcalc.table.CellStyle;
++import com.shrimpfarm.app.mixcalc.table.CellTextProvider;
++import com.shrimpfarm.app.mixcalc.table.MixCalcTableView;
++import com.shrimpfarm.app.mixcalc.table.OnCellEditListener;
++import com.shrimpfarm.app.mixcalc.table.OnCellTapListener;
++import com.shrimpfarm.app.mixcalc.table.TableColumn;
++import com.shrimpfarm.app.mixcalc.table.TableColumnConfig;
+ 
+ import org.json.JSONArray;
+ import org.json.JSONObject;
+@@ -59,7 +49,6 @@ import java.text.SimpleDateFormat;
+ import java.util.ArrayList;
+ import java.util.Date;
+ import java.util.HashMap;
+-import java.util.HashSet;
+ import java.util.List;
+ import java.util.Locale;
+ import java.util.Map;
+@@ -80,20 +69,12 @@ public class MixCalcActivity extends BaseActivity {
+     private static final String KEY_SHED_COUNT_LIMIT = "shed_count_limit";
+ 
+     // 视图组件
+-    private LinearLayout dataContent;
+-    private LinearLayout headerScrollContent;
+-    private LinearLayout footerScrollContent;
+-    private LinearLayout fixedHeaderContainer;
+-    private LinearLayout fixedFooterContainer;
+-    private HorizontalScrollView headerScrollView;
+-    private HorizontalScrollView footerScrollView;
+-    private ScrollView verticalScrollView;
++    private MixCalcTableView table;
++    private TableColumnConfig tableConfig;
++    private TextView tvErrorDisplay;
+ 
+     // 数据
+     private List<FeedData> dataList;
+-    private List<HorizontalScrollView> rowScrollViews;
+-    private List<LinearLayout> fixedDataRows;
+-    private HashSet<String> listenersAddedSet = new HashSet<>();
+     private int globalWaterPercentage = 20;
+ 
+     // 发酵料计算标志
+@@ -103,16 +84,10 @@ public class MixCalcActivity extends BaseActivity {
+     // 棚数限制相关变量
+     private int shedCountLimit = 0;
+     private boolean isShedCountExceeded = false;
+-    private Drawable normalShedCountBg;
+-    private Drawable warningShedCountBg;
+-
+-    // 懒加载相关变量
+-    private int screenVisibleRows = 10;
+-    private int currentlyLoadedRows = 0;
+ 
+     // 列管理
+-    private Map<String, Boolean> columnVisibility = new HashMap<String, Boolean>();
+-    private Map<String, Boolean> columnFixed = new HashMap<String, Boolean>();
++    private final Map<String, Boolean> columnVisibility = new HashMap<String, Boolean>();
++    private final Map<String, Boolean> columnFixed = new HashMap<String, Boolean>();
+     private PopupWindow columnSettingsPopup;
+     private final String[] columnIds = {
+         "seq", "shed_number", "shed_count", "average_feed", 
+@@ -128,49 +103,192 @@ public class MixCalcActivity extends BaseActivity {
+     private boolean isTabletMode = false;
+     private int[] adaptiveColumnWidths;
+ 
+-    // 当前滚动位置
+-    private int currentScrollX = 0;
+-
+-    // 防止递归调用标志
+-    private boolean isSyncing = false;
+-
+-    // 防止平均格程序化更新触发监听器（递归）标志
+-    private boolean isUpdatingAverageCell = false;
++    // 表尾统计值（由 updateFooterRow 填充，绘制时读取）
++    private final Map<String, Double> footerTotals = new HashMap<>();
+ 
+     // 非发酵料列（按粒径由小到大），换料比例只在这几种料之间生效
+     private static final String[] NF_FEED_COLUMNS = {"powder", "feed03", "feed05", "feed10"};
+ 
+-    // 触摸事件相关
+-    private float lastX, lastY;
+-    private boolean isHorizontalScroll = false;
++    // 总数据行数
++    private static final int TOTAL_ROWS = 30;
++
++    // 批次与数据库相关
++    private String currentBatchId;
++    private DatabaseHelper dbHelper;
+ 
+-    // 滚动监听器列表
+-    private List<ViewTreeObserver.OnScrollChangedListener> scrollListeners = new ArrayList<>();
++    // ==================== 自绘引擎提供者 ====================
+ 
+-    // 单元格映射
+-    private Map<String, View> cellViewMap = new HashMap<>();
++    private final CellTextProvider textProvider = new CellTextProvider() {
++        @Override
++        public String getHeaderText(String columnId) {
++            if ("average_feed".equals(columnId)) {
++                return getString(R.string.mix_col_avg_feed);
++            }
++            if ("water".equals(columnId)) {
++                return getString(R.string.water_percentage_header, globalWaterPercentage);
++            }
++            int idx = getColumnIndex(columnId);
++            return (idx >= 0 && columnNames != null) ? columnNames[idx] : "";
++        }
+ 
+-    // 数据行容器映射
+-    private Map<Integer, LinearLayout> rowLayoutMap = new HashMap<>();
++        @Override
++        public int getHeaderState(String columnId) {
++            if (!"fermented".equals(columnId)) {
++                return CellStyle.HEADER_NORMAL;
++            }
++            if (fermentedIncludedInAverage) {
++                return fermentedIncludedInWater
++                        ? CellStyle.HEADER_FERMENTED_GREEN_BROWN
++                        : CellStyle.HEADER_FERMENTED_GRAY_BROWN;
++            }
++            return fermentedIncludedInWater
++                    ? CellStyle.HEADER_FERMENTED_GREEN
++                    : CellStyle.HEADER_FERMENTED_GRAY;
++        }
+ 
+-    // 统计行单元格映射
+-    private Map<String, TextView> footerCellMap = new HashMap<>();
++        @Override
++        public String getCellText(int row, String columnId) {
++            FeedData data = getData(row);
++            if (data == null) {
++                return "";
++            }
++            switch (columnId) {
++                case "seq":
++                    return String.valueOf(row + 1);
++                case "shed_number":
++                    return data.getShedNumber();
++                case "water":
++                case "average_feed":
++                case "weighed_feed":
++                    return getCellDisplayValue(data, columnId);
++                default:
++                    return getCellInitialValue(data, columnId);
++            }
++        }
+ 
+-    // 新增：数据是否已加载标志
+-    private boolean isDataLoaded = false;
++        @Override
++        public int getCellState(int row, String columnId) {
++            FeedData data = getData(row);
++            if (data == null) {
++                return CellStyle.STATE_NORMAL;
++            }
++            if ("shed_count".equals(columnId)
++                    && data.getShedCount() > 0 && isShedCountExceeded) {
++                return CellStyle.STATE_WARNING;
++            }
++            if (isEditableColumn(columnId)
++                    && !"average_feed".equals(columnId)
++                    && !isCellEnabled(columnId, data, row)) {
++                return CellStyle.STATE_DISABLED;
++            }
++            if (isCellEnabled(columnId, data, row) && isSwitchRatioCell(data, columnId)) {
++                return CellStyle.STATE_HIGHLIGHT;
++            }
++            return CellStyle.STATE_NORMAL;
++        }
+ 
+-    // 总数据行数
+-    private static final int TOTAL_ROWS = 30;
++        @Override
++        public boolean isCellEditable(int row, String columnId) {
++            FeedData data = getData(row);
++            if (data == null || !isEditableColumn(columnId)) {
++                return false;
++            }
++            return isCellEnabled(columnId, data, row);
++        }
+ 
+-    // 序号列统计行View引用
+-    private TextView seqStatTextView;
++        @Override
++        public String getFooterText(String columnId) {
++            if ("seq".equals(columnId)) {
++                return getString(R.string.seq_stat_format, getFilledRowCount(), TOTAL_ROWS);
++            }
++            if ("shed_number".equals(columnId)) {
++                return getString(R.string.mix_btn_go_check);
++            }
++            if ("weighed_feed".equals(columnId)) {
++                return getString(R.string.mix_btn_reset);
++            }
++            Double v = footerTotals.get(columnId);
++            double value = v == null ? 0 : v;
++            if (value == 0) {
++                return "0";
++            }
++            if (value == (int) value) {
++                return String.valueOf((int) value);
++            }
++            return String.format(Locale.ROOT, "%.2f", value);
++        }
+ 
+-    // 标题栏误差显示
+-    private TextView tvErrorDisplay;
++        @Override
++        public int getFooterStyle(String columnId) {
++            if ("shed_number".equals(columnId)) {
++                return CellStyle.FOOTER_BLUE;
++            }
++            if ("weighed_feed".equals(columnId)) {
++                return CellStyle.FOOTER_CARMINE;
++            }
++            return CellStyle.FOOTER_NORMAL;
++        }
++    };
+ 
+-    // 批次与数据库相关
+-    private String currentBatchId;
+-    private DatabaseHelper dbHelper;
++    private final OnCellTapListener tapListener = new OnCellTapListener() {
++        @Override
++        public void onCellClick(int row, String columnId) {
++            // 编辑由引擎的 beginEdit 处理，这里无需额外动作
++        }
++
++        @Override
++        public void onCellLongPress(int row, String columnId, Rect cellRect) {
++            FeedData data = getData(row);
++            if (data == null || !isNonFermentedFeedColumn(columnId)) {
++                return;
++            }
++            if (!isCellEnabled(columnId, data, row)) {
++                return;
++            }
++            String larger = getLargerNonFermentedColumn(data);
++            if (larger != null && larger.equals(columnId)) {
++                showSwitchRatioDrawer(data, cellRect);
++            }
++        }
++
++        @Override
++        public void onHeaderClick(String columnId) {
++            if ("water".equals(columnId)) {
++                showWaterPercentageDialog();
++            } else if ("fermented".equals(columnId)) {
++                showFermentedCalculationDialog();
++            }
++        }
++
++        @Override
++        public void onHeaderLongPress(String columnId, Rect cellRect) {
++            int idx = getColumnIndex(columnId);
++            if (idx >= 0) {
++                showColumnOperationMenu(idx, columnId);
++            }
++        }
++
++        @Override
++        public void onFooterClick(String columnId) {
++            if ("shed_number".equals(columnId)) {
++                prepareDataAndNavigate();
++            } else if ("weighed_feed".equals(columnId)) {
++                showResetConfirmationDialog();
++            }
++        }
++    };
++
++    private final OnCellEditListener editListener = new OnCellEditListener() {
++        @Override
++        public void onCellCommitted(int row, String columnId, String text) {
++            commitCell(row, columnId, text);
++        }
++
++        @Override
++        public void onEditNext(int row, String columnId) {
++            moveFocusToNextEditableCell(row, getColumnIndex(columnId));
++        }
++    };
+ 
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
+@@ -204,30 +322,31 @@ public class MixCalcActivity extends BaseActivity {
+             // 保存到 SharedPreferences 供内部使用
+             getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putInt(KEY_SHED_COUNT_LIMIT, shedCountLimit).apply();
+ 
+-            // ---------- 原有初始化 ----------
+             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+ 
+-            // 第1步：初始化视图（立即）
++            // 初始化视图
+             initViews();
+-
+-            // 初始化列名
+             initColumnNames();
+-
+-            // 初始化背景资源
+-            normalShedCountBg = ContextCompat.getDrawable(this, R.drawable.cell_border);
+-            warningShedCountBg = ContextCompat.getDrawable(this, R.drawable.cell_border_warning);
+-
+-            // 第2步：快速加载设置
+             loadQuickSettings();
++            initTabletAdaptiveSettings();
+ 
+-            // 第3步：计算屏幕能显示多少行
+-            calculateScreenVisibleRows();
++            // 列可见 / 固定状态
++            initColumnVisibility();
++            initColumnFixedState();
++            loadColumnVisibility();
++            loadColumnFixedState();
+ 
+-            // 第4步：延迟创建表格（允许UI先完成渲染，避免ANR）
+-            new Handler().post(() -> {
+-                buildEmptyTableWithoutListeners();
+-                lazyInitializeListenersAndData();
+-            });
++            // 装配自绘引擎
++            initData();
++            applyColumnConfig();
++            table.setCellTextProvider(textProvider);
++            table.setOnCellTapListener(tapListener);
++            table.setOnCellEditListener(editListener);
++            table.setRows(dataList);
++
++            // 加载已保存数据并计算
++            loadAllDataInBackground();
++            updateAllCalculations();
+ 
+         } catch (Exception e) {
+             Log.e(TAG, "启动异常: " + e.getMessage(), e);
+@@ -265,39 +384,6 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    // 计算屏幕能显示多少行
+-    private void calculateScreenVisibleRows() {
+-        try {
+-            DisplayMetrics metrics = getResources().getDisplayMetrics();
+-            int screenHeight = metrics.heightPixels;
+-
+-            isTabletMode = isTabletDevice(this);
+-
+-            if (isTabletMode) {
+-                screenVisibleRows = 25;
+-            } else {
+-                int rowHeight = dpToPx(40);
+-                int statusBarHeight = getStatusBarHeight();
+-                int headerHeight = dpToPx(40);
+-                int footerHeight = dpToPx(40);
+-                int availableHeight = screenHeight - statusBarHeight - headerHeight - footerHeight;
+-                screenVisibleRows = (availableHeight / rowHeight) + 2;
+-                screenVisibleRows = Math.max(5, Math.min(screenVisibleRows, 30));
+-            }
+-        } catch (Exception e) {
+-            Log.e(TAG, "计算可见行数异常", e);
+-            screenVisibleRows = 15;
+-        }
+-    }
+-
+-    private int getStatusBarHeight() {
+-        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(getWindow().getDecorView());
+-        if (insets != null) {
+-            return insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
+-        }
+-        return 0;
+-    }
+-
+     private boolean isTabletDevice(Context context) {
+         try {
+             DisplayMetrics displayMetrics = context.getResources().getDisplayMetrics();
+@@ -311,227 +397,6 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    // 创建空表格（不带监听器）
+-    private void buildEmptyTableWithoutListeners() {
+-        try {
+-            // 清理监听器记录
+-            listenersAddedSet.clear();
+-            
+-            // 1. 初始化数据结构
+-            initData();
+-
+-            // 2. 初始化列设置
+-            initTabletAdaptiveSettings();
+-            initColumnVisibility();
+-            initColumnFixedState();
+-            loadColumnVisibility();
+-            loadColumnFixedState();
+-
+-            // 3. 构建表头和统计行
+-            int scrollWidth = calculateScrollWidth();
+-            buildHeader(scrollWidth);
+-            buildFooter(scrollWidth);
+-
+-            // 4. 创建所有行的空表格
+-            for (int i = 0; i < TOTAL_ROWS; i++) {
+-                buildEmptyRowWithoutListeners(i, scrollWidth);
+-                currentlyLoadedRows++;
+-            }
+-
+-            // 5. 设置滚动同步
+-            setupScrollSync();
+-
+-        } catch (Exception e) {
+-            Log.e(TAG, "创建空表格异常", e);
+-        }
+-    }
+-
+-    // 创建空行（不带监听器）
+-    private void buildEmptyRowWithoutListeners(final int rowIndex, int scrollWidth) {
+-        LinearLayout rowLayout = new LinearLayout(this);
+-        rowLayout.setOrientation(LinearLayout.HORIZONTAL);
+-        rowLayout.setLayoutParams(new LinearLayout.LayoutParams(
+-                                      LinearLayout.LayoutParams.MATCH_PARENT, 
+-                                      dpToPx(40)
+-                                  ));
+-
+-        LinearLayout fixedLayout = createFixedColumnsWithoutListeners(rowIndex);
+-        rowLayout.addView(fixedLayout);
+-
+-        HorizontalScrollView scrollView = createScrollColumnsWithoutListeners(rowIndex, scrollWidth);
+-        rowLayout.addView(scrollView);
+-
+-        dataContent.addView(rowLayout);
+-
+-        rowLayoutMap.put(rowIndex, rowLayout);
+-        rowScrollViews.add(scrollView);
+-        fixedDataRows.add(fixedLayout);
+-    }
+-
+-    // 创建固定列（不带监听器）
+-    private LinearLayout createFixedColumnsWithoutListeners(final int rowIndex) {
+-        LinearLayout fixedLayout = new LinearLayout(this);
+-        fixedLayout.setOrientation(LinearLayout.HORIZONTAL);
+-
+-        int fixedWidth = 0;
+-
+-        View seqView = createCellWithoutListeners("seq", rowIndex, 0);
+-        fixedLayout.addView(seqView);
+-        fixedWidth += adaptiveColumnWidths[0];
+-
+-        for (int i = 1; i < columnIds.length; i++) {
+-            String columnId = columnIds[i];
+-            boolean visible = columnVisibility.get(columnId);
+-            boolean fixed = columnFixed.get(columnId);
+-
+-            if (visible && fixed) {
+-                View cellView = createCellWithoutListeners(columnId, rowIndex, i);
+-                fixedLayout.addView(cellView);
+-                fixedWidth += adaptiveColumnWidths[i];
+-            }
+-        }
+-
+-        fixedLayout.setLayoutParams(new LinearLayout.LayoutParams(
+-                                        fixedWidth,
+-                                        dpToPx(40)
+-                                    ));
+-
+-        return fixedLayout;
+-    }
+-
+-    // 创建滚动列（不带监听器）
+-    private HorizontalScrollView createScrollColumnsWithoutListeners(final int rowIndex, int scrollWidth) {
+-        HorizontalScrollView scrollView = new HorizontalScrollView(this);
+-        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
+-                                       0,
+-                                       dpToPx(40),
+-                                       1.0f
+-                                   ));
+-        scrollView.setHorizontalScrollBarEnabled(false);
+-        scrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+-
+-        LinearLayout scrollContent = new LinearLayout(this);
+-        scrollContent.setOrientation(LinearLayout.HORIZONTAL);
+-        scrollContent.setLayoutParams(new LinearLayout.LayoutParams(
+-                                          scrollWidth,
+-                                          dpToPx(40)
+-                                      ));
+-
+-        for (int i = 0; i < columnIds.length; i++) {
+-            String columnId = columnIds[i];
+-            boolean visible = columnVisibility.get(columnId);
+-            boolean fixed = columnFixed.get(columnId);
+-
+-            if (visible && !fixed) {
+-                View cellView = createCellWithoutListeners(columnId, rowIndex, i);
+-                scrollContent.addView(cellView);
+-            }
+-        }
+-
+-        scrollView.addView(scrollContent);
+-        return scrollView;
+-    }
+-
+-    // 创建不带监听器的单元格
+-    private View createCellWithoutListeners(String columnId, int rowIndex, int columnIndex) {
+-        boolean isEditable = isEditableColumn(columnId);
+-
+-        if (isEditable) {
+-            EditText cellView = new EditText(this);
+-            cellView.setLayoutParams(new LinearLayout.LayoutParams(
+-                                         adaptiveColumnWidths[columnIndex],
+-                                         dpToPx(40)
+-                                     ));
+-            cellView.setGravity(Gravity.CENTER);
+-            cellView.setTextSize(12);
+-            cellView.setTypeface(cellView.getTypeface(), android.graphics.Typeface.BOLD);
+-            cellView.setBackgroundResource(R.drawable.cell_border);
+-            cellView.setPadding(0, 0, 0, 0);
+-            cellView.setSingleLine(true);
+-            cellView.setTag(rowIndex + "_" + columnId);
+-            cellView.setEnabled(false);
+-            cellView.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+-
+-            if ("shed_number".equals(columnId)) {
+-                cellView.setInputType(InputType.TYPE_CLASS_TEXT);
+-                cellView.setSingleLine(true);
+-            } else {
+-                cellView.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+-            }
+-
+-            cellViewMap.put(rowIndex + "_" + columnId, cellView);
+-            return cellView;
+-        } else {
+-            TextView cellView = new TextView(this);
+-            cellView.setLayoutParams(new LinearLayout.LayoutParams(
+-                                         adaptiveColumnWidths[columnIndex],
+-                                         dpToPx(40)
+-                                     ));
+-            cellView.setGravity(Gravity.CENTER);
+-            cellView.setTextSize(12);
+-            cellView.setTypeface(cellView.getTypeface(), android.graphics.Typeface.BOLD);
+-            cellView.setBackgroundResource(R.drawable.cell_border);
+-            cellView.setPadding(0, 0, 0, 0);
+-            cellView.setTag(rowIndex + "_" + columnId);
+-            cellViewMap.put(rowIndex + "_" + columnId, cellView);
+-
+-            if ("seq".equals(columnId)) {
+-                cellView.setText(String.valueOf(rowIndex + 1));
+-                cellView.setTextColor(0xFF666666);
+-            } else if ("shed_number".equals(columnId)) {
+-                cellView.setText(getString(R.string.shed_number_format, rowIndex + 1));
+-                cellView.setTextColor(Color.BLACK);
+-                cellView.setSingleLine(true);
+-            } else {
+-                cellView.setText("");
+-            }
+-
+-            return cellView;
+-        }
+-    }
+-
+-    // 立即初始化监听器和数据（移除延迟）
+-    private void lazyInitializeListenersAndData() {
+-        try {
+-            // 确保清理监听器记录
+-            listenersAddedSet.clear();
+-            
+-            loadAllDataInBackground();
+-            
+-            // 初始时所有行只添加棚号/棚数监听器
+-            for (int i = 0; i < dataList.size(); i++) {
+-                FeedData data = dataList.get(i);
+-                addShedListenersToRow(i);
+-                
+-                // 如果该行已有其他列数据，需要加载其他列监听器
+-                if (hasOtherColumnData(data)) {
+-                    loadOtherColumnListenersIfNeeded(i);
+-                }
+-                refreshRowCells(i);
+-            }
+-            
+-            updateFooterRow();
+-        } catch (Exception e) {
+-            Log.e(TAG, "初始化异常", e);
+-        }
+-    }
+-    
+-    // 检查行是否有其他列（除棚号/棚数外）的数据
+-    private boolean hasOtherColumnData(FeedData data) {
+-        return data != null && (
+-            data.getFermentedFeed() > 0 ||
+-            data.getPowderFeed() > 0 ||
+-            data.getFeed03() > 0 ||
+-            data.getFeed05() > 0 ||
+-            data.getFeed10() > 0
+-        );
+-    }
+-    
+-    // 检查行是否有棚号或棚数数据
+-    private boolean hasShedData(FeedData data) {
+-        return data != null && (!data.getShedNumber().isEmpty() || data.getShedCount() > 0);
+-    }
+-
+     // 在后台加载数据
+     private void loadAllDataInBackground() {
+         try {
+@@ -567,38 +432,6 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    // 为单行添加监听器（棚号和棚数）
+-    private void addShedListenersToRow(int rowIndex) {
+-        try {
+-            FeedData data = dataList.get(rowIndex);
+-            if (data == null) return;
+-
+-            // 只为棚号和棚数列添加监听器
+-            String[] shedColumns = {"shed_number", "shed_count"};
+-            
+-            for (String columnId : shedColumns) {
+-                int columnIndex = getColumnIndex(columnId);
+-                if (columnIndex < 0) continue;
+-                
+-                View view = cellViewMap.get(rowIndex + "_" + columnId);
+-                if (view != null) {
+-                    if (view instanceof TextView && !(view instanceof EditText)) {
+-                        replaceTextViewWithEditText(rowIndex, columnId, columnIndex, (TextView)view);
+-                    } else if (view instanceof EditText) {
+-                        EditText editText = (EditText) view;
+-
+-                        String initialValue = getCellInitialValue(data, columnId);
+-                        editText.setText(initialValue);
+-
+-                        addShedTextWatcher(editText, rowIndex, columnId, columnIndex);
+-                    }
+-                }
+-            }
+-        } catch (Exception e) {
+-            Log.e(TAG, "为行添加监听器异常: row=" + rowIndex, e);
+-        }
+-    }
+-    
+     // 获取列索引
+     private int getColumnIndex(String columnId) {
+         for (int i = 0; i < columnIds.length; i++) {
+@@ -609,180 +442,84 @@ public class MixCalcActivity extends BaseActivity {
+         return -1;
+     }
+ 
+-    // 为棚号/棚数添加TextWatcher（使用 HashSet 检查）
+-    private void addShedTextWatcher(final EditText editText, final int rowIndex, final String columnId, final int columnIndex) {
+-        String key = rowIndex + "_" + columnId;
+-        if (listenersAddedSet.contains(key)) {
+-            return; // 已添加过
+-        }
+-        listenersAddedSet.add(key);
+-        
+-        // 启用编辑
+-        editText.setEnabled(true);
+-        
+-        editText.addTextChangedListener(new TextWatcher() {
+-            @Override
+-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+-
+-            @Override
+-            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+-
+-            @Override
+-            public void afterTextChanged(Editable s) {
+-                if ("shed_number".equals(columnId)) {
+-                    String text = s.toString().trim();
+-                    final FeedData data = dataList.get(rowIndex);
+-                    data.setShedNumber(text);
+-                    data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-                    updateShedCountDisplay(rowIndex, data);
+-                    updateCalculatedCells(rowIndex);
+-                    updateRowInputEnabled(rowIndex);
+-                    updateFooterRow();
+-                    saveAllData();
+-                    checkShedCountLimitAndUpdateInput();
+-                } else if ("shed_count".equals(columnId)) {
+-                    // 棚数的处理在焦点监听器中
+-                }
+-            }
+-        });
+-        
+-        // 棚数的焦点监听器单独添加
+-        if ("shed_count".equals(columnId)) {
+-            editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+-                @Override
+-                public void onFocusChange(View v, boolean hasFocus) {
+-                    if (!hasFocus) {
+-                        String text = editText.getText().toString().trim();
+-                        final FeedData data = dataList.get(rowIndex);
+-
+-                        double newValue = 0;
+-                        if (!text.isEmpty()) {
+-                            try {
+-                                newValue = Double.parseDouble(text);
+-                            } catch (NumberFormatException e) {
+-                                newValue = 0;
+-                                editText.setText("");
+-                            }
+-                        }
++    private FeedData getData(int row) {
++        if (dataList == null || row < 0 || row >= dataList.size()) {
++            return null;
++        }
++        return dataList.get(row);
++    }
+ 
+-                        data.setShedCount((int)newValue);
++    // ==================== 编辑提交（迁移自原 TextWatcher / 焦点监听） ====================
+ 
+-                        if (newValue == 0 || text.isEmpty()) {
+-                            data.setShedCountManuallyModified(false);
+-                        } else {
+-                            data.setShedCountManuallyModified(true);
+-                        }
++    private void commitCell(int row, String columnId, String text) {
++        FeedData data = getData(row);
++        if (data == null) {
++            return;
++        }
++        String value = text == null ? "" : text.trim();
+ 
+-                        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-                        updateCalculatedCells(rowIndex);
+-                        updateRowInputEnabled(rowIndex);
+-                        updateFooterRow();
+-                        saveAllData();
+-                        checkShedCountLimitAndUpdateInput();
+-                        checkAndLoadOtherColumnListeners(rowIndex);
++        switch (columnId) {
++            case "shed_number":
++                data.setShedNumber(value);
++                break;
++            case "shed_count": {
++                double newValue = 0;
++                if (!value.isEmpty()) {
++                    try {
++                        newValue = Double.parseDouble(value);
++                    } catch (NumberFormatException e) {
++                        newValue = 0;
+                     }
+                 }
+-            });
+-        }
+-        
+-        // 键盘下一步导航
+-        editText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+-            @Override
+-            public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
+-                if (actionId == EditorInfo.IME_ACTION_NEXT) {
+-                    moveFocusToNextEditableCell(rowIndex, columnIndex);
+-                    return true;
+-                }
+-                return false;
++                data.setShedCount((int) newValue);
++                data.setShedCountManuallyModified(!(newValue == 0 || value.isEmpty()));
++                break;
+             }
+-        });
+-    }
+-    
+-    // 在输入完棚号/棚数后，检查是否需要加载其他列监听器
+-    private void checkAndLoadOtherColumnListeners(int rowIndex) {
+-        FeedData data = dataList.get(rowIndex);
+-        if (data == null) return;
+-        
+-        if (hasShedData(data)) {
+-            loadOtherColumnListenersIfNeeded(rowIndex);
+-        }
+-    }
+-    
+-    // 延迟加载/移除其他列的监听器（当棚号或棚数有数据时加载，无数据时移除）
+-    private void loadOtherColumnListenersIfNeeded(int rowIndex) {
+-        if (rowIndex < 0 || rowIndex >= dataList.size()) return;
+-        
+-        FeedData data = dataList.get(rowIndex);
+-        if (data == null) return;
+-        
+-        // 检查棚号或棚数是否有数据
+-        if (hasShedData(data)) {
+-            // 有数据：加载其他列监听器（使用Tag避免重复添加）
+-            String[] otherColumns = {"fermented", "powder", "feed03", "feed05", "feed10", "average_feed"};
+-            
+-            for (String columnId : otherColumns) {
+-                int columnIndex = getColumnIndex(columnId);
+-                if (columnIndex < 0) continue;
+-                
+-                String key = rowIndex + "_" + columnId;
+-                View view = cellViewMap.get(key);
+-                if (view == null) continue;
+-                
+-                if (view instanceof EditText) {
+-                    EditText editText = (EditText) view;
+-                    
+-                    // 检查是否已添加过监听器（使用 HashSet 检查）
+-                    if (listenersAddedSet.contains(key)) {
+-                        continue; // 已添加过，跳过
+-                    }
+-                    
+-                    if ("average_feed".equals(columnId)) {
+-                        editText.setEnabled(isCellEnabled("average_feed", data, rowIndex));
+-                    } else {
+-                        // 启用编辑
+-                        editText.setEnabled(true);
+-                    }
+-                    
+-                    String initialValue = getCellInitialValue(data, columnId);
+-                    editText.setText(initialValue);
+-                    
+-                    if ("average_feed".equals(columnId)) {
+-                        addAverageFeedTextWatcher(editText, rowIndex, columnId, columnIndex);
+-                    } else {
+-                        addOriginalTextWatcher(editText, rowIndex, columnId, columnIndex);
+-                    }
++            case "average_feed": {
++                data.setAverageManually(parseDouble(value), fermentedIncludedInAverage);
++                break;
++            }
++            default: {
++                double v = parseDouble(value);
++                data.setAverageManuallyModified(false);
++                switch (columnId) {
++                    case "fermented":
++                        data.setFermentedFeed(v);
++                        break;
++                    case "powder":
++                        data.setPowderFeed(v);
++                        break;
++                    case "feed03":
++                        data.setFeed03(v);
++                        break;
++                    case "feed05":
++                        data.setFeed05(v);
++                        break;
++                    case "feed10":
++                        data.setFeed10(v);
++                        break;
+                 }
++                // 手改任意料格：作废已设置的换料比例，回到两料实际比例
++                if ("fermented".equals(columnId) || isNonFermentedFeedColumn(columnId)) {
++                    data.setSwitchRatio(0);
++                }
++                break;
+             }
+-            
+-            updateCalculatedCells(rowIndex);
+-            refreshSwitchRatioIndicator(rowIndex);
+-        } else {
+-            // 无数据：移除其他列监听器并禁用
+-            removeOtherColumnListeners(rowIndex);
+-        }
+-    }
+-    
+-    // 移除其他列的监听器并禁用
+-    private void removeOtherColumnListeners(int rowIndex) {
+-        if (rowIndex < 0 || rowIndex >= dataList.size()) return;
+-        
+-        String[] otherColumns = {"fermented", "powder", "feed03", "feed05", "feed10", "average_feed"};
+-        
+-        for (String columnId : otherColumns) {
+-            String key = rowIndex + "_" + columnId;
+-            View view = cellViewMap.get(key);
+-            if (view == null) continue;
+-            
+-            if (view instanceof EditText) {
+-                EditText editText = (EditText) view;
+-                editText.setEnabled(false);
+-                editText.setText("");
+-            }
+-        }
+-        
+-        // 更新计算单元格
+-        FeedData data = dataList.get(rowIndex);
+-        if (data != null) {
++        }
++
++        applyRowChange(row);
++    }
++
++    /**
++     * 行数据变化后的统一出口：无棚数时清空料格（对应旧的"禁用即清空"），重算并整表重绘。
++     */
++    private void applyRowChange(int row) {
++        FeedData data = getData(row);
++        if (data == null) {
++            return;
++        }
++
++        if (data.getShedCount() <= 0) {
+             data.setFermentedFeed(0);
+             data.setPowderFeed(0);
+             data.setFeed03(0);
+@@ -792,322 +529,79 @@ public class MixCalcActivity extends BaseActivity {
+             data.setWeighedFeed(0);
+             data.setAverage(0);
+             data.setAverageManuallyModified(false);
++            data.setSwitchRatio(0);
++        }
++
++        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
++        if (table != null) {
++            table.notifyAllChanged();
+         }
+-        
+-        updateCalculatedCells(rowIndex);
+-        updateRowInputEnabled(rowIndex);
+         updateFooterRow();
++        saveAllData();
++        checkShedCountLimitAndUpdateInput();
+     }
+ 
+-    // 替换TextView为EditText（用于棚号列）
+-    private void replaceTextViewWithEditText(int rowIndex, String columnId, int columnIndex, TextView textView) {
+-        ViewParent parent = textView.getParent();
+-        if (parent instanceof LinearLayout) {
+-            LinearLayout container = (LinearLayout) parent;
++    private double parseDouble(String text) {
++        if (text == null || text.isEmpty()) {
++            return 0;
++        }
++        try {
++            return Double.parseDouble(text);
++        } catch (NumberFormatException e) {
++            return 0;
++        }
++    }
+ 
+-            int position = -1;
+-            for (int i = 0; i < container.getChildCount(); i++) {
+-                if (container.getChildAt(i) == textView) {
+-                    position = i;
+-                    break;
+-                }
++    // 移动到下一个可编辑单元格
++    private void moveFocusToNextEditableCell(int currentRow, int currentColumnIndex) {
++        try {
++            if (currentColumnIndex < 0 || table == null) {
++                return;
+             }
+ 
+-            if (position != -1) {
+-                container.removeViewAt(position);
+-
+-                EditText editText = new EditText(this);
+-                editText.setLayoutParams(new LinearLayout.LayoutParams(
+-                                             adaptiveColumnWidths[columnIndex],
+-                                             dpToPx(40)
+-                                         ));
+-                editText.setGravity(Gravity.CENTER);
+-                editText.setTextSize(12);
+-                editText.setTypeface(editText.getTypeface(), android.graphics.Typeface.BOLD);
+-                editText.setBackgroundResource(R.drawable.cell_border);
+-                editText.setPadding(0, 0, 0, 0);
+-                editText.setTag(rowIndex + "_" + columnId);
+-                editText.setInputType(InputType.TYPE_CLASS_TEXT);
+-                editText.setSingleLine(true);
+-                editText.setGravity(Gravity.CENTER);
+-
+-                FeedData data = dataList.get(rowIndex);
+-                String initialValue = data.getShedNumber();
+-                if (initialValue == null || initialValue.isEmpty()) {
+-                    initialValue = textView.getText().toString();
+-                    String shedFmt = getString(R.string.shed_number_format);
+-                    String shedPrefix = shedFmt.substring(0, shedFmt.indexOf('%'));
+-                    if (!shedPrefix.isEmpty() && initialValue.startsWith(shedPrefix)) {
+-                        initialValue = "";
++            for (int nextColIndex = currentColumnIndex + 1; nextColIndex < columnIds.length; nextColIndex++) {
++                String nextColumnId = columnIds[nextColIndex];
++                Boolean visible = columnVisibility.get(nextColumnId);
++                if (visible != null && visible && isEditableColumn(nextColumnId)) {
++                    FeedData data = getData(currentRow);
++                    if (data != null && isCellEnabled(nextColumnId, data, currentRow)) {
++                        if (table.beginEdit(currentRow, nextColumnId)) {
++                            return;
++                        }
+                     }
+                 }
+-                editText.setText(initialValue);
+-
+-                addOriginalTextWatcher(editText, rowIndex, columnId, columnIndex);
+-                container.addView(editText, position);
+-                cellViewMap.put(rowIndex + "_" + columnId, editText);
+-            }
+-        }
+-    }
+-
+-    // 添加原始的TextWatcher（使用 HashSet 来标记已添加）
+-    private void addOriginalTextWatcher(final EditText editText, final int rowIndex, final String columnId, final int columnIndex) {
+-        String key = rowIndex + "_" + columnId;
+-        if (listenersAddedSet.contains(key)) {
+-            return; // 已添加过
+-        }
+-        listenersAddedSet.add(key);
+-        
+-        if ("shed_number".equals(columnId)) {
+-            editText.addTextChangedListener(new TextWatcher() {
+-                    @Override
+-                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+-
+-                    @Override
+-                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
+-
+-                    @Override
+-                    public void afterTextChanged(Editable s) {
+-                        String text = s.toString().trim();
+-                        final FeedData data = dataList.get(rowIndex);
+-                        data.setShedNumber(text);
+-                        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-                        updateShedCountDisplay(rowIndex, data);
+-                        updateCalculatedCells(rowIndex);
+-                        updateRowInputEnabled(rowIndex);
+-                        updateFooterRow();
+-                        saveAllData();
+-                        checkShedCountLimitAndUpdateInput();
+-                    }
+-                });
+-        } else if ("shed_count".equals(columnId)) {
+-            editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+-                    @Override
+-                    public void onFocusChange(View v, boolean hasFocus) {
+-                        if (!hasFocus) {
+-                            String text = editText.getText().toString().trim();
+-                            final FeedData data = dataList.get(rowIndex);
+-
+-                            double newValue = 0;
+-                            if (!text.isEmpty()) {
+-                                try {
+-                                    newValue = Double.parseDouble(text);
+-                                } catch (NumberFormatException e) {
+-                                    newValue = 0;
+-                                    editText.setText("");
+-                                }
+-                            }
+-
+-                            data.setShedCount((int)newValue);
++            }
+ 
+-                            if (newValue == 0 || text.isEmpty()) {
+-                                data.setShedCountManuallyModified(false);
+-                            } else {
+-                                data.setShedCountManuallyModified(true);
++            int nextRow = currentRow + 1;
++            if (dataList != null && nextRow < dataList.size()) {
++                for (int colIndex = 0; colIndex < columnIds.length; colIndex++) {
++                    String columnId = columnIds[colIndex];
++                    Boolean visible = columnVisibility.get(columnId);
++                    if (visible != null && visible && isEditableColumn(columnId)) {
++                        FeedData data = getData(nextRow);
++                        if (data != null && isCellEnabled(columnId, data, nextRow)) {
++                            if (table.beginEdit(nextRow, columnId)) {
++                                return;
+                             }
+-
+-                            data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-                            updateCalculatedCells(rowIndex);
+-                            updateRowInputEnabled(rowIndex);
+-                            updateFooterRow();
+-                            saveAllData();
+-                            checkShedCountLimitAndUpdateInput();
+-                            checkAndLoadOtherColumnListeners(rowIndex);
+                         }
+                     }
+-                });
+-        } else {
+-            if (isNonFermentedFeedColumn(columnId)) {
+-                editText.setOnLongClickListener(new View.OnLongClickListener() {
+-                        @Override
+-                        public boolean onLongClick(View v) {
+-                            FeedData d = dataList.get(rowIndex);
+-                            String larger = getLargerNonFermentedColumn(d);
+-                            if (larger != null && larger.equals(columnId)) {
+-                                showSwitchRatioDrawer(d, v);
+-                                return true;
+-                            }
+-                            return false;
+-                        }
+-                    });
+-            }
+-            editText.addTextChangedListener(new TextWatcher() {
+-                    @Override
+-                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+-
+-                    @Override
+-                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
+-
+-                    @Override
+-                    public void afterTextChanged(Editable s) {
+-                        if (isUpdatingAverageCell) {
+-                            return;
+-                        }
+-                        String text = s.toString().trim();
+-                        final FeedData data = dataList.get(rowIndex);
+-                        data.setAverageManuallyModified(false);
+-
+-                        double value = 0;
+-                        if (!text.isEmpty()) {
+-                            try {
+-                                value = Double.parseDouble(text);
+-                            } catch (NumberFormatException e) {
+-                                value = 0;
+-                            }
+-                        }
+-
+-                        switch (columnId) {
+-                            case "fermented":
+-                                data.setFermentedFeed(value);
+-                                break;
+-                            case "powder":
+-                                data.setPowderFeed(value);
+-                                break;
+-                            case "feed03":
+-                                data.setFeed03(value);
+-                                break;
+-                            case "feed05":
+-                                data.setFeed05(value);
+-                                break;
+-                            case "feed10":
+-                                data.setFeed10(value);
+-                                break;
+-                        }
+-
+-                        // 手改任意料格：作废已设置的换料比例，回到两料实际比例
+-                        if ("fermented".equals(columnId) || isNonFermentedFeedColumn(columnId)) {
+-                            data.setSwitchRatio(0);
+-                        }
+-
+-                        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-                        updateCalculatedCells(rowIndex);
+-                        updateAverageCellEnabledState(rowIndex, data);
+-                        refreshSwitchRatioIndicator(rowIndex);
+-                        updateFooterRow();
+-                        saveAllData();
+-                        checkShedCountLimitAndUpdateInput();
+-                    }
+-                });
+-        }
+-
+-        editText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+-                @Override
+-                public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
+-                    if (actionId == EditorInfo.IME_ACTION_NEXT) {
+-                        moveFocusToNextEditableCell(rowIndex, columnIndex);
+-                        return true;
+-                    }
+-                    return false;
+-                }
+-            });
+-    }
+-
+-    // 为平均列添加TextWatcher（单行仅一种料时可编辑，反向计算料量）
+-    private void addAverageFeedTextWatcher(final EditText editText, final int rowIndex, final String columnId, final int columnIndex) {
+-        String key = rowIndex + "_" + columnId;
+-        if (listenersAddedSet.contains(key)) {
+-            return;
+-        }
+-        listenersAddedSet.add(key);
+-
+-        editText.addTextChangedListener(new TextWatcher() {
+-                @Override
+-                public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+-
+-                @Override
+-                public void onTextChanged(CharSequence s, int start, int before, int count) {}
+-
+-                @Override
+-                public void afterTextChanged(Editable s) {
+-                    if (isUpdatingAverageCell) {
+-                        return;
+-                    }
+-                    String text = s.toString().trim();
+-                    final FeedData data = dataList.get(rowIndex);
+-
+-                    double value = 0;
+-                    if (!text.isEmpty()) {
+-                        try {
+-                            value = Double.parseDouble(text);
+-                        } catch (NumberFormatException e) {
+-                            value = 0;
+-                        }
+-                    }
+-
+-                    data.setAverageManually(value, fermentedIncludedInAverage);
+-                    data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-                    syncFeedCellsFromModel(rowIndex, data);
+-                    updateCalculatedCells(rowIndex);
+-                    updateAverageCellEnabledState(rowIndex, data);
+-                    updateFooterRow();
+-                    saveAllData();
+-                }
+-            });
+-
+-        editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+-                @Override
+-                public void onFocusChange(View v, boolean hasFocus) {
+-                    if (!hasFocus) {
+-                        FeedData data = dataList.get(rowIndex);
+-                        String newValue = getCellInitialValue(data, "average_feed");
+-                        EditText et = (EditText) v;
+-                        if (!et.getText().toString().trim().equals(newValue)) {
+-                            isUpdatingAverageCell = true;
+-                            try {
+-                                et.setText(newValue);
+-                            } finally {
+-                                isUpdatingAverageCell = false;
+-                            }
+-                        }
+-                    }
+-                }
+-            });
+-
+-        editText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+-                @Override
+-                public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
+-                    if (actionId == EditorInfo.IME_ACTION_NEXT) {
+-                        moveFocusToNextEditableCell(rowIndex, columnIndex);
+-                        return true;
+-                    }
+-                    return false;
+                 }
+-            });
+-    }
++            }
+ 
+-    // 根据模型值同步该行料格文本（反算后调用，避免触发料格监听器）
+-    private void syncFeedCellsFromModel(int rowIndex, FeedData data) {
+-        String[] feedColumns = {"fermented", "powder", "feed03", "feed05", "feed10"};
+-        for (String columnId : feedColumns) {
+-            View view = cellViewMap.get(rowIndex + "_" + columnId);
+-            if (view instanceof EditText) {
+-                EditText editText = (EditText) view;
+-                if (editText.hasFocus()) {
+-                    continue;
+-                }
+-                String newValue = getCellInitialValue(data, columnId);
+-                if (!editText.getText().toString().trim().equals(newValue)) {
+-                    isUpdatingAverageCell = true;
+-                    try {
+-                        editText.setText(newValue);
+-                    } finally {
+-                        isUpdatingAverageCell = false;
+-                    }
+-                }
++            // 没有下一个可编辑格：收起浮层并隐藏输入法
++            table.endEdit();
++            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
++            if (imm != null) {
++                imm.hideSoftInputFromWindow(table.getWindowToken(), 0);
+             }
+-        }
+-    }
+ 
+-    // 根据当前状态刷新平均格的可用性（不改变文本、始终保持边框样式）
+-    private void updateAverageCellEnabledState(int rowIndex, FeedData data) {
+-        View view = cellViewMap.get(rowIndex + "_average_feed");
+-        if (view instanceof EditText) {
+-            EditText editText = (EditText) view;
+-            editText.setEnabled(isCellEnabled("average_feed", data, rowIndex));
+-            editText.setBackgroundResource(R.drawable.cell_border);
++        } catch (Exception e) {
++            Log.e(TAG, "移动焦点异常: " + e.getMessage());
+         }
+     }
+ 
++    // ==================== 生命周期 / 棚数限制 ====================
++
+     @Override
+     protected void onResume() {
+         super.onResume();
+@@ -1121,8 +615,6 @@ public class MixCalcActivity extends BaseActivity {
+         saveGlobalWaterPercentage();
+         saveFermentedIncludedInWater();
+         saveFermentedIncludedInAverage();
+-        clearAllScrollListeners();
+-        clearAllCellListeners();
+     }
+ 
+     @Override
+@@ -1138,41 +630,29 @@ public class MixCalcActivity extends BaseActivity {
+     public void onConfigurationChanged(android.content.res.Configuration newConfig) {
+         super.onConfigurationChanged(newConfig);
+         isTabletMode = isTabletDevice(this);
+-        if (isTabletMode) {
+-            initTabletAdaptiveSettings();
+-            rebuildCompleteTable();
+-        }
++        initTabletAdaptiveSettings();
++        rebuildCompleteTable();
+     }
+ 
+-
+-
+     // 检查棚数限制并更新输入状态
+     private void checkShedCountLimitAndUpdateInput() {
+         try {
+             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+-            int loadedLimit = prefs.getInt(KEY_SHED_COUNT_LIMIT, 0);
+-            shedCountLimit = loadedLimit;
++            shedCountLimit = prefs.getInt(KEY_SHED_COUNT_LIMIT, 0);
+ 
+-            if (shedCountLimit > 0) {
++            boolean newExceedStatus = false;
++            if (shedCountLimit > 0 && dataList != null) {
+                 double totalShedCount = 0;
+                 for (FeedData data : dataList) {
+                     totalShedCount += data.getShedCount();
+                 }
++                newExceedStatus = totalShedCount > shedCountLimit;
++            }
+ 
+-                boolean newExceedStatus = totalShedCount > shedCountLimit;
+-
+-                if (newExceedStatus != isShedCountExceeded) {
+-                    isShedCountExceeded = newExceedStatus;
+-                    for (int i = 0; i < dataList.size(); i++) {
+-                        updateRowInputEnabled(i);
+-                    }
+-                }
+-            } else {
+-                if (isShedCountExceeded) {
+-                    isShedCountExceeded = false;
+-                    for (int i = 0; i < dataList.size(); i++) {
+-                        updateRowInputEnabled(i);
+-                    }
++            if (newExceedStatus != isShedCountExceeded) {
++                isShedCountExceeded = newExceedStatus;
++                if (table != null) {
++                    table.notifyAllChanged();
+                 }
+             }
+         } catch (Exception e) {
+@@ -1180,6 +660,8 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
++    // ==================== 数据格式化 / 跳转 ====================
++
+     // 数据格式化和传递方法
+     private String formatDataToMessage() {
+         try {
+@@ -1385,58 +867,6 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    // 创建统计单元格方法
+-    private TextView createStatCell(String columnId, int columnIndex) {
+-        TextView statView = new TextView(this);
+-
+-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+-            adaptiveColumnWidths[columnIndex],
+-            dpToPx(40)
+-        );
+-
+-        statView.setLayoutParams(params);
+-        statView.setGravity(Gravity.CENTER);
+-        statView.setTextSize(12);
+-        statView.setTypeface(statView.getTypeface(), android.graphics.Typeface.BOLD);
+-        statView.setBackgroundResource(R.drawable.cell_border);
+-
+-        if (columnIndex == columnIds.length - 1) {
+-            statView.setText(getString(R.string.mix_btn_reset));
+-            statView.setTextColor(0xFFFFFFFF);
+-            statView.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
+-            statView.setBackgroundResource(R.drawable.cell_border_carmine);
+-            statView.setOnClickListener(new View.OnClickListener() {
+-                    @Override
+-                    public void onClick(View v) {
+-                        showResetConfirmationDialog();
+-                    }
+-                });
+-        } else if ("shed_number".equals(columnId)) {
+-            statView.setText(getString(R.string.mix_btn_go_check));
+-            statView.setTextColor(0xFFFFFFFF);
+-            statView.setBackgroundResource(R.drawable.cell_border_blue);
+-            statView.setTextSize(12);
+-            statView.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
+-            statView.setOnClickListener(new View.OnClickListener() {
+-                    @Override
+-                    public void onClick(View v) {
+-                        prepareDataAndNavigate();
+-                    }
+-                });
+-        } else if ("seq".equals(columnId)) {
+-            int filledRows = getFilledRowCount();
+-            statView.setText(getString(R.string.seq_stat_format, filledRows, TOTAL_ROWS));
+-            statView.setTextColor(0xFF0000FF);
+-            seqStatTextView = statView;
+-        } else {
+-            statView.setText("0");
+-            statView.setTextColor(0xFF0000FF);
+-            footerCellMap.put(columnId, statView);
+-        }
+-
+-        return statView;
+-    }
+-
+     // 更新统计行
+     private void updateFooterRow() {
+         try {
+@@ -1467,20 +897,21 @@ public class MixCalcActivity extends BaseActivity {
+                 }
+             }
+ 
+-            updateFooterCell("shed_count", totalShedCount);
+-            updateFooterCell("fermented", totalFermented);
+-            updateFooterCell("powder", totalPowder);
+-            updateFooterCell("feed03", totalFeed03);
+-            updateFooterCell("feed05", totalFeed05);
+-            updateFooterCell("feed10", totalFeed10);
+-            updateFooterCell("water", totalWater);
++            footerTotals.put("shed_count", totalShedCount);
++            footerTotals.put("fermented", totalFermented);
++            footerTotals.put("powder", totalPowder);
++            footerTotals.put("feed03", totalFeed03);
++            footerTotals.put("feed05", totalFeed05);
++            footerTotals.put("feed10", totalFeed10);
++            footerTotals.put("water", totalWater);
++            footerTotals.put("average_feed",
++                    validAverageCount > 0 ? totalAverageFeed / validAverageCount : 0);
+ 
+-            double avgAverageFeed = validAverageCount > 0 ? totalAverageFeed / validAverageCount : 0;
+-            updateFooterCell("average_feed", avgAverageFeed);
+-
+-            updateSeqStatView();
+             checkShedCountLimitAndUpdateInput();
+             updateErrorDisplay();
++            if (table != null) {
++                table.notifyAllChanged();
++            }
+ 
+         } catch (Exception e) {
+             Log.e(TAG, "更新统计行异常: " + e.getMessage());
+@@ -1537,7 +968,8 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    // 平板适配核心方法
++    // ==================== 平板自适应 ====================
++
+     private void initTabletAdaptiveSettings() {
+         try {
+             isTabletMode = isTabletDevice(this);
+@@ -1634,12 +1066,9 @@ public class MixCalcActivity extends BaseActivity {
+             if (Math.abs(currentTotal - targetWidth) > 50) {
+                 float scale = (float) targetWidth / currentTotal;
+ 
+-                int adjustedTotal = 0;
+                 for (int i = 0; i < adaptiveColumnWidths.length; i++) {
+                     adaptiveColumnWidths[i] = (int)(adaptiveColumnWidths[i] * scale);
+-                    adjustedTotal += adaptiveColumnWidths[i];
+                 }
+-
+             }
+ 
+         } catch (Exception e) {
+@@ -1658,121 +1087,12 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    // 刷新所有单元格显示
+-    private void refreshAllCells() {
+-        try {
+-            for (int i = 0; i < dataList.size(); i++) {
+-                refreshRowCells(i);
+-            }
+-
+-            updateFooterRow();
+-        } catch (Exception e) {
+-            Log.e(TAG, "刷新所有单元格异常: " + e.getMessage(), e);
+-        }
+-    }
+-
+-    // 刷新指定行的所有单元格
+-    private void refreshRowCells(int rowIndex) {
+-        try {
+-            FeedData data = dataList.get(rowIndex);
+-
+-            for (int i = 0; i < columnIds.length; i++) {
+-                String columnId = columnIds[i];
+-                View cellView = cellViewMap.get(rowIndex + "_" + columnId);
+-
+-                if (cellView != null) {
+-                    if (cellView instanceof EditText) {
+-                        EditText editText = (EditText) cellView;
+-                        String currentValue = editText.getText().toString().trim();
+-                        String newValue = getCellInitialValue(data, columnId);
+-
+-                        if (!currentValue.equals(newValue) && !editText.hasFocus()) {
+-                            TextWatcher[] watchers = getTextWatchers(editText);
+-                            for (TextWatcher watcher : watchers) {
+-                                editText.removeTextChangedListener(watcher);
+-                            }
+-
+-                            editText.setText(newValue);
+-
+-                            for (TextWatcher watcher : watchers) {
+-                                editText.addTextChangedListener(watcher);
+-                            }
+-                        }
+-
+-                        boolean isEnabled = isCellEnabled(columnId, data, rowIndex);
+-                        editText.setEnabled(isEnabled);
+-
+-                        if ("average_feed".equals(columnId)) {
+-                            editText.setBackgroundResource(R.drawable.cell_border);
+-                        } else if ("shed_count".equals(columnId)) {
+-                            if (data.getShedCount() > 0 && isShedCountExceeded) {
+-                                editText.setBackground(warningShedCountBg);
+-                            } else {
+-                                editText.setBackground(normalShedCountBg);
+-                            }
+-                        } else {
+-                            if (isEnabled) {
+-                                editText.setBackgroundResource(R.drawable.cell_border);
+-                            } else {
+-                                editText.setBackgroundResource(R.drawable.cell_border_disabled);
+-                            }
+-                        }
+-
+-                    } else if (cellView instanceof TextView) {
+-                        // TextView处理逻辑
+-                    }
+-                }
+-            }
+-
+-            updateRowInputEnabled(rowIndex);
+-
+-        } catch (Exception e) {
+-            Log.e(TAG, "刷新行单元格异常，行索引: " + rowIndex + ", 错误: " + e.getMessage());
+-        }
+-    }
+-
+-    // 获取EditText的TextWatcher列表
+-    private TextWatcher[] getTextWatchers(EditText editText) {
+-        try {
+-            Object[] listeners = (Object[]) editText.getClass()
+-                .getMethod("getListeners", Class.forName("android.text.TextWatcher"))
+-                .invoke(editText, (Object) null);
+-
+-            if (listeners != null && listeners.length > 0) {
+-                TextWatcher[] watchers = new TextWatcher[listeners.length];
+-                for (int i = 0; i < listeners.length; i++) {
+-                    watchers[i] = (TextWatcher) listeners[i];
+-                }
+-                return watchers;
+-            }
+-        } catch (Exception e) {
+-            Log.e(TAG, "获取TextWatcher异常: " + e.getMessage());
+-        }
+-        return new TextWatcher[0];
+-    }
++    // ==================== 视图接线 ====================
+ 
+     private void initViews() {
+         try {
+-            dataContent = (LinearLayout) findViewById(R.id.data_content);
+-            headerScrollContent = (LinearLayout) findViewById(R.id.header_scroll_content);
+-            footerScrollContent = (LinearLayout) findViewById(R.id.footer_scroll_content);
+-            fixedHeaderContainer = (LinearLayout) findViewById(R.id.fixed_header_container);
+-            fixedFooterContainer = (LinearLayout) findViewById(R.id.fixed_footer_container);
+-            headerScrollView = (HorizontalScrollView) findViewById(R.id.header_scroll_view);
+-            footerScrollView = (HorizontalScrollView) findViewById(R.id.footer_scroll_view);
+-            verticalScrollView = (ScrollView) findViewById(R.id.vertical_scroll_view);
+-            tvErrorDisplay = (TextView) findViewById(R.id.tv_error_display);
+-            
+-            // 禁用橡皮筋效果
+-            if (headerScrollView != null) {
+-                headerScrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+-            }
+-            if (footerScrollView != null) {
+-                footerScrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+-            }
+-            if (verticalScrollView != null) {
+-                verticalScrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+-            }
++            table = findViewById(R.id.mix_calc_table);
++            tvErrorDisplay = findViewById(R.id.tv_error_display);
+ 
+             // 列设置齿轮按钮（平板模式下隐藏）
+             View settingsBtn = findViewById(R.id.btn_column_settings);
+@@ -1795,8 +1115,6 @@ public class MixCalcActivity extends BaseActivity {
+     private void initData() {
+         try {
+             dataList = new ArrayList<FeedData>();
+-            rowScrollViews = new ArrayList<HorizontalScrollView>();
+-            fixedDataRows = new ArrayList<LinearLayout>();
+ 
+             for (int i = 0; i < TOTAL_ROWS; i++) {
+                 dataList.add(new FeedData());
+@@ -1806,6 +1124,69 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
++    /** 依据 columnIds / adaptiveColumnWidths / 可见 / 固定状态，重建引擎的列配置。 */
++    private void applyColumnConfig() {
++        if (table == null) {
++            return;
++        }
++
++        List<TableColumn> cols = new ArrayList<>();
++        for (int i = 0; i < columnIds.length; i++) {
++            int width = (adaptiveColumnWidths != null && i < adaptiveColumnWidths.length)
++                    ? adaptiveColumnWidths[i] : dpToPx(columnWidths[i]);
++            cols.add(createTableColumn(columnIds[i], width));
++        }
++
++        TableColumnConfig cfg = new TableColumnConfig(cols);
++        cfg.setFixed("seq", true);
++        for (int i = 1; i < columnIds.length; i++) {
++            String id = columnIds[i];
++            Boolean visible = columnVisibility.get(id);
++            Boolean fixed = columnFixed.get(id);
++            cfg.setVisible(id, visible == null || visible);
++            cfg.setFixed(id, fixed != null && fixed);
++        }
++
++        tableConfig = cfg;
++        table.setColumnConfig(cfg);
++    }
++
++    private TableColumn createTableColumn(String id, int widthPx) {
++        boolean editable = isEditableColumn(id);
++        int color = Color.BLACK;
++        int inputType = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL;
++
++        if ("seq".equals(id)) {
++            color = 0xFF666666;
++        } else if ("average_feed".equals(id) || "water".equals(id) || "weighed_feed".equals(id)) {
++            color = 0xFF0000FF;
++        }
++
++        if ("shed_number".equals(id)) {
++            inputType = InputType.TYPE_CLASS_TEXT;
++        }
++
++        return new TableColumn(id, widthPx, editable, color, inputType);
++    }
++
++    private void rebuildCompleteTable() {
++        try {
++            if (isTabletMode) {
++                calculateAdaptiveColumnWidths();
++            }
++            applyColumnConfig();
++            if (table != null) {
++                table.notifyAllChanged();
++            }
++            updateFooterRow();
++        } catch (Exception e) {
++            Log.e(TAG, "重建完整表格异常: " + e.getMessage(), e);
++            Toast.makeText(this, getString(R.string.mix_toast_rebuild_fail), Toast.LENGTH_SHORT).show();
++        }
++    }
++
++    // ==================== 列可见性 / 固定状态 ====================
++
+     private void initColumnVisibility() {
+         try {
+             columnVisibility.put("seq", true);
+@@ -1895,17 +1276,6 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    // 加载全局水百分比
+-    private void loadGlobalWaterPercentage() {
+-        try {
+-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+-            globalWaterPercentage = prefs.getInt(KEY_GLOBAL_WATER, 20);
+-        } catch (Exception e) {
+-            Log.e(TAG, "加载全局水百分比异常: " + e.getMessage());
+-            globalWaterPercentage = 20;
+-        }
+-    }
+-
+     // 保存发酵料参与水分计算设置
+     private void saveFermentedIncludedInWater() {
+         try {
+@@ -1918,17 +1288,6 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    // 加载发酵料参与水分计算设置
+-    private void loadFermentedIncludedInWater() {
+-        try {
+-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+-            fermentedIncludedInWater = prefs.getBoolean(KEY_FERMENTED_INCLUDED_IN_WATER, false);
+-        } catch (Exception e) {
+-            Log.e(TAG, "加载发酵料参与水分计算设置异常: " + e.getMessage());
+-            fermentedIncludedInWater = false;
+-        }
+-    }
+-
+     // 保存发酵料参与平均吃料计算设置
+     private void saveFermentedIncludedInAverage() {
+         try {
+@@ -1941,17 +1300,6 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    // 加载发酵料参与平均吃料计算设置
+-    private void loadFermentedIncludedInAverage() {
+-        try {
+-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+-            fermentedIncludedInAverage = prefs.getBoolean(KEY_FERMENTED_INCLUDED_IN_AVERAGE, false);
+-        } catch (Exception e) {
+-            Log.e(TAG, "加载发酵料参与平均吃料计算设置异常: " + e.getMessage());
+-            fermentedIncludedInAverage = false;
+-        }
+-    }
+-
+     // 保存所有数据
+     private void saveAllData() {
+         try {
+@@ -1972,289 +1320,55 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    private void rebuildCompleteTable() {
+-        try {
+-            if (isTabletMode) {
+-                calculateAdaptiveColumnWidths();
+-            }
++    @android.annotation.SuppressLint("InflateParams")
++    private void showStyledConfirmDialog70(String title, String message, String[] buttonTexts, final int[] buttonColors, final DialogInterface.OnClickListener[] listeners) {
++        Dialog dialog = new Dialog(this);
++        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_simple_confirm, null);
++        dialog.setContentView(dialogView);
+ 
+-            clearAllScrollListeners();
+-            clearAllCellListeners();
+-            cleanupAllViews();
+-            resetAllStates();
+-            buildTableFromScratch();
+-            
+-            // 重建后重新加载监听器：所有行只添加棚号/棚数监听器
+-            // 如果某行已有其他列数据，会自动加载其他列监听器
+-            for (int i = 0; i < dataList.size(); i++) {
+-                FeedData data = dataList.get(i);
+-                addShedListenersToRow(i);
+-                
+-                // 如果该行已有其他列数据，需要加载其他列监听器
+-                if (hasOtherColumnData(data)) {
+-                    loadOtherColumnListenersIfNeeded(i);
+-                }
+-            }
+-            
+-            updateFooterRow();
++        TextView tvTitle = dialogView.findViewById(R.id.tv_title);
++        tvTitle.setText(title);
+ 
+-        } catch (Exception e) {
+-            Log.e(TAG, "重建完整表格异常: " + e.getMessage(), e);
+-            Toast.makeText(this, getString(R.string.mix_toast_rebuild_fail), Toast.LENGTH_SHORT).show();
+-        }
+-    }
++        TextView tvMessage = dialogView.findViewById(R.id.tv_message);
++        tvMessage.setText(message);
+ 
+-    private void clearAllScrollListeners() {
+-        try {
+-            for (ViewTreeObserver.OnScrollChangedListener listener : scrollListeners) {
+-                if (headerScrollView != null) {
+-                    headerScrollView.getViewTreeObserver().removeOnScrollChangedListener(listener);
+-                }
+-                if (footerScrollView != null) {
+-                    footerScrollView.getViewTreeObserver().removeOnScrollChangedListener(listener);
+-                }
++        LinearLayout buttonLayout = dialogView.findViewById(R.id.layout_buttons);
++        for (int i = 0; i < buttonTexts.length; i++) {
++            Button btn = new Button(this);
++            btn.setText(buttonTexts[i]);
++            btn.setTextSize(15);
++            btn.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
++            btn.setTextColor(buttonColors != null && i < buttonColors.length ? buttonColors[i] : 0xFF333333);
++            btn.setBackgroundResource(android.R.color.transparent);
++            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
++                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
++            if (i < buttonTexts.length - 1) {
++                View divider = new View(this);
++                divider.setLayoutParams(new LinearLayout.LayoutParams(1, ViewGroup.LayoutParams.MATCH_PARENT));
++                divider.setBackgroundColor(0xFFE0E0E0);
++                buttonLayout.addView(divider);
+             }
+-            scrollListeners.clear();
+-
+-            for (HorizontalScrollView scrollView : rowScrollViews) {
+-                if (scrollView != null) {
+-                    ViewTreeObserver observer = scrollView.getViewTreeObserver();
+-                    observer.removeOnScrollChangedListener(null);
++            final int index = i;
++            btn.setOnClickListener(v -> {
++                if (listeners != null && index < listeners.length && listeners[index] != null) {
++                    listeners[index].onClick(dialog, index);
+                 }
+-            }
+-
+-        } catch (Exception e) {
+-            Log.e(TAG, "清理滚动监听器异常: " + e.getMessage());
+-        }
+-    }
+-
+-    private void clearAllCellListeners() {
+-        try {
+-            cellViewMap.clear();
+-            rowLayoutMap.clear();
+-            footerCellMap.clear();
+-        } catch (Exception e) {
+-            Log.e(TAG, "清理单元格监听器异常: " + e.getMessage());
++                dialog.dismiss();
++            });
++            buttonLayout.addView(btn, lp);
+         }
+-    }
+ 
+-    private void cleanupAllViews() {
+-        try {
+-            if (headerScrollContent != null) headerScrollContent.removeAllViews();
+-            if (footerScrollContent != null) footerScrollContent.removeAllViews();
+-            if (fixedHeaderContainer != null) fixedHeaderContainer.removeAllViews();
+-            if (fixedFooterContainer != null) fixedFooterContainer.removeAllViews();
+-            if (dataContent != null) dataContent.removeAllViews();
+-
+-            rowScrollViews.clear();
+-            fixedDataRows.clear();
+-        } catch (Exception e) {
+-            Log.e(TAG, "清理视图异常: " + e.getMessage());
+-        }
++        int screenWidth = getResources().getDisplayMetrics().widthPixels;
++        dialog.getWindow().setLayout((int)(screenWidth * 0.7), ViewGroup.LayoutParams.WRAP_CONTENT);
++        dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
++        dialog.show();
+     }
+ 
+-    private void resetAllStates() {
+-        try {
+-            currentScrollX = 0;
+-            isSyncing = false;
+-            isHorizontalScroll = false;
+-            lastX = 0;
+-            lastY = 0;
+-            isShedCountExceeded = false;
+-            listenersAddedSet.clear();
+-        } catch (Exception e) {
+-            Log.e(TAG, "重置状态异常: " + e.getMessage());
+-        }
+-    }
+-
+-    private void buildTableFromScratch() {
+-        try {
+-            int scrollWidth = calculateScrollWidth();
+-
+-            buildHeader(scrollWidth);
+-            buildFooter(scrollWidth);
+-            buildDataRows(scrollWidth);
+-            setupScrollSync();
+-
+-        } catch (Exception e) {
+-            Log.e(TAG, "从零构建表格异常: " + e.getMessage());
+-        }
+-    }
+-
+-    private int calculateScrollWidth() {
+-        int width = 0;
+-        for (int i = 0; i < columnIds.length; i++) {
+-            String columnId = columnIds[i];
+-            if (columnVisibility.get(columnId) && !columnFixed.get(columnId)) {
+-                width += adaptiveColumnWidths[i];
+-            }
+-        }
+-        return width;
+-    }
+-
+-    private void buildHeader(int scrollWidth) {
+-        try {
+-            buildFixedHeader();
+-            buildScrollHeader();
+-
+-            if (headerScrollContent != null && scrollWidth > 0) {
+-                LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) headerScrollContent.getLayoutParams();
+-                params.width = scrollWidth;
+-                headerScrollContent.setLayoutParams(params);
+-                headerScrollContent.requestLayout();
+-            }
+-
+-        } catch (Exception e) {
+-            Log.e(TAG, "构建表头异常: " + e.getMessage());
+-        }
+-    }
+-
+-    private void buildFixedHeader() {
+-        TextView seqHeader = createHeaderCell("seq", 0);
+-        fixedHeaderContainer.addView(seqHeader);
+-
+-        for (int i = 1; i < columnIds.length; i++) {
+-            final int columnIndex = i;
+-            String columnId = columnIds[i];
+-            boolean visible = columnVisibility.get(columnId);
+-            boolean fixed = columnFixed.get(columnId);
+-
+-            if (visible && fixed) {
+-                TextView headerView = createHeaderCell(columnId, columnIndex);
+-                headerView.setOnLongClickListener(new View.OnLongClickListener() {
+-                        @Override
+-                        public boolean onLongClick(View v) {
+-                            String columnId = columnIds[columnIndex];
+-                            showColumnOperationMenu(columnIndex, columnId, v);
+-                            return true;
+-                        }
+-                    });
+-                fixedHeaderContainer.addView(headerView);
+-            }
+-        }
+-    }
+-
+-    private void buildScrollHeader() {
+-        for (int i = 1; i < columnIds.length; i++) {
+-            final int columnIndex = i;
+-            String columnId = columnIds[i];
+-            boolean visible = columnVisibility.get(columnId);
+-            boolean fixed = columnFixed.get(columnId);
+-
+-            if (visible && !fixed) {
+-                TextView headerView = createHeaderCell(columnId, columnIndex);
+-                headerView.setOnLongClickListener(new View.OnLongClickListener() {
+-                        @Override
+-                        public boolean onLongClick(View v) {
+-                            String columnId = columnIds[columnIndex];
+-                            showColumnOperationMenu(columnIndex, columnId, v);
+-                            return true;
+-                        }
+-                    });
+-                headerScrollContent.addView(headerView);
+-            }
+-        }
+-    }
+-
+-    // 创建表头单元格
+-    private TextView createHeaderCell(String columnId, int columnIndex) {
+-        TextView headerView = new TextView(this);
+-
+-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+-            adaptiveColumnWidths[columnIndex],
+-            dpToPx(40)
+-        );
+-
+-        headerView.setLayoutParams(params);
+-        headerView.setGravity(Gravity.CENTER);
+-
+-        if ("average_feed".equals(columnId)) {
+-            headerView.setText(getString(R.string.mix_col_avg_feed));
+-            headerView.setGravity(Gravity.CENTER);
+-        } else if ("water".equals(columnId)) {
+-            headerView.setText(getString(R.string.water_percentage_header, globalWaterPercentage));
+-            headerView.setOnClickListener(new View.OnClickListener() {
+-                    @Override
+-                    public void onClick(View v) {
+-                        showWaterPercentageDialog();
+-                    }
+-                });
+-        } else {
+-            headerView.setText(columnNames[columnIndex]);
+-        }
+-
+-        // 为发酵料表头设置背景和点击事件
+-        if ("fermented".equals(columnId)) {
+-            // 根据当前设置初始化背景
+-            updateFermentedHeaderCellBackground(headerView);
+-
+-            // 设置点击监听器，显示四个选项的对话框
+-            headerView.setOnClickListener(new View.OnClickListener() {
+-                    @Override
+-                    public void onClick(View v) {
+-                        showFermentedCalculationDialog(); // 改为新的四个选项对话框
+-                    }
+-                });
+-        } else {
+-            headerView.setBackgroundResource(R.drawable.cell_border);
+-        }
+-
+-        headerView.setTextSize(12);
+-        headerView.setSingleLine(true);
+-        headerView.setTextColor(0xFF000000);
+-
+-        return headerView;
+-    }
+-
+-    @android.annotation.SuppressLint("InflateParams")
+-    private void showStyledConfirmDialog70(String title, String message, String[] buttonTexts, final int[] buttonColors, final DialogInterface.OnClickListener[] listeners) {
+-        Dialog dialog = new Dialog(this);
+-        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_simple_confirm, null);
+-        dialog.setContentView(dialogView);
+-
+-        TextView tvTitle = dialogView.findViewById(R.id.tv_title);
+-        tvTitle.setText(title);
+-
+-        TextView tvMessage = dialogView.findViewById(R.id.tv_message);
+-        tvMessage.setText(message);
+-
+-        LinearLayout buttonLayout = dialogView.findViewById(R.id.layout_buttons);
+-        for (int i = 0; i < buttonTexts.length; i++) {
+-            Button btn = new Button(this);
+-            btn.setText(buttonTexts[i]);
+-            btn.setTextSize(15);
+-            btn.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
+-            btn.setTextColor(buttonColors != null && i < buttonColors.length ? buttonColors[i] : 0xFF333333);
+-            btn.setBackgroundResource(android.R.color.transparent);
+-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+-                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+-            if (i < buttonTexts.length - 1) {
+-                View divider = new View(this);
+-                divider.setLayoutParams(new LinearLayout.LayoutParams(1, ViewGroup.LayoutParams.MATCH_PARENT));
+-                divider.setBackgroundColor(0xFFE0E0E0);
+-                buttonLayout.addView(divider);
+-            }
+-            final int index = i;
+-            btn.setOnClickListener(v -> {
+-                if (listeners != null && index < listeners.length && listeners[index] != null) {
+-                    listeners[index].onClick(dialog, index);
+-                }
+-                dialog.dismiss();
+-            });
+-            buttonLayout.addView(btn, lp);
+-        }
+-
+-        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+-        dialog.getWindow().setLayout((int)(screenWidth * 0.7), ViewGroup.LayoutParams.WRAP_CONTENT);
+-        dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+-        dialog.show();
+-    }
+-
+-    @android.annotation.SuppressLint("InflateParams")
+-    private void showStyledListDialog(String title, String[] items, final DialogInterface.OnClickListener listener) {
+-        Dialog dialog = new Dialog(this);
+-        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_simple_list, null);
+-        dialog.setContentView(dialogView);
++    @android.annotation.SuppressLint("InflateParams")
++    private void showStyledListDialog(String title, String[] items, final DialogInterface.OnClickListener listener) {
++        Dialog dialog = new Dialog(this);
++        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_simple_list, null);
++        dialog.setContentView(dialogView);
+ 
+         TextView tvTitle = dialogView.findViewById(R.id.tv_title);
+         tvTitle.setText(title);
+@@ -2332,7 +1446,6 @@ public class MixCalcActivity extends BaseActivity {
+                 if (needRefresh) {
+                     saveFermentedIncludedInWater();
+                     saveFermentedIncludedInAverage();
+-                    updateFermentedHeaderBackground();
+                     updateAllCalculations();
+                     String status = getString(R.string.mix_setting_status);
+                     status += fermentedIncludedInWater ? getString(R.string.mix_ferment_include_water) : getString(R.string.mix_ferment_exclude_water);
+@@ -2340,728 +1453,107 @@ public class MixCalcActivity extends BaseActivity {
+                     status += fermentedIncludedInAverage ? getString(R.string.mix_ferment_include_avg) : getString(R.string.mix_ferment_exclude_avg);
+                     Toast.makeText(MixCalcActivity.this, status, Toast.LENGTH_SHORT).show();
+                 } else {
+-                    Toast.makeText(MixCalcActivity.this, getString(R.string.mix_toast_no_change), Toast.LENGTH_SHORT).show();
+-                }
+-            });
+-
+-        } catch (Exception e) {
+-            Log.e(TAG, "显示发酵料计算设置对话框异常: " + e.getMessage());
+-            Toast.makeText(this, getString(R.string.mix_toast_setting_fail), Toast.LENGTH_SHORT).show();
+-        }
+-    }
+-
+-    // 更新发酵料表头背景
+-    private void updateFermentedHeaderBackground() {
+-        updateFermentedHeaderInContainer(fixedHeaderContainer);
+-        updateFermentedHeaderInContainer(headerScrollContent);
+-    }
+-
+-    private void updateFermentedHeaderInContainer(LinearLayout container) {
+-        if (container == null) return;
+-        String fermentedLabel = getString(R.string.mix_col_fermented);
+-
+-        for (int i = 0; i < container.getChildCount(); i++) {
+-            View child = container.getChildAt(i);
+-            if (child instanceof TextView) {
+-                TextView tv = (TextView) child;
+-                String text = tv.getText().toString();
+-
+-                if (text.contains(fermentedLabel)) {
+-                    updateFermentedHeaderCellBackground(tv);
+-                }
+-            }
+-        }
+-    }
+-
+-    // 为单个发酵料表头单元格设置背景
+-    private void updateFermentedHeaderCellBackground(TextView headerView) {
+-        if (headerView == null) return;
+-
+-        // 根据两个标志的组合选择不同的样式
+-        if (fermentedIncludedInAverage) {
+-            // 参与算料 - 使用褐色边框样式
+-            if (fermentedIncludedInWater) {
+-                // 参与算水 - 褐色边框 + 绿色背景
+-                headerView.setBackgroundResource(R.drawable.cell_border_brown_green);
+-            } else {
+-                // 不参与算水 - 褐色边框 + 灰色背景
+-                headerView.setBackgroundResource(R.drawable.cell_border_brown_gray);
+-            }
+-        } else {
+-            // 不参与算料 - 使用原有的黑色边框样式
+-            if (fermentedIncludedInWater) {
+-                // 参与算水 - 黑色边框 + 绿色背景
+-                headerView.setBackgroundResource(R.drawable.cell_border_green);
+-            } else {
+-                // 不参与算水 - 黑色边框 + 灰色背景
+-                headerView.setBackgroundResource(R.drawable.cell_border_fermented_default);
+-            }
+-        }
+-    }
+-
+-    private void buildFooter(int scrollWidth) {
+-        try {
+-            buildFixedFooter();
+-            buildScrollFooter();
+-
+-            if (footerScrollContent != null && scrollWidth > 0) {
+-                LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) footerScrollContent.getLayoutParams();
+-                params.width = scrollWidth;
+-                footerScrollContent.setLayoutParams(params);
+-                footerScrollContent.requestLayout();
+-            }
+-
+-        } catch (Exception e) {
+-            Log.e(TAG, "构建统计行异常: " + e.getMessage());
+-        }
+-    }
+-
+-    private void buildFixedFooter() {
+-        TextView seqStat = createStatCell("seq", 0);
+-        fixedFooterContainer.addView(seqStat);
+-
+-        for (int i = 1; i < columnIds.length; i++) {
+-            final int columnIndex = i;
+-            String columnId = columnIds[i];
+-            boolean visible = columnVisibility.get(columnId);
+-            boolean fixed = columnFixed.get(columnId);
+-
+-            if (visible && fixed) {
+-                TextView statView = createStatCell(columnId, columnIndex);
+-                fixedFooterContainer.addView(statView);
+-            }
+-        }
+-    }
+-
+-    private void buildScrollFooter() {
+-        for (int i = 1; i < columnIds.length; i++) {
+-            final int columnIndex = i;
+-            String columnId = columnIds[i];
+-            boolean visible = columnVisibility.get(columnId);
+-            boolean fixed = columnFixed.get(columnId);
+-
+-            if (visible && !fixed) {
+-                TextView statView = createStatCell(columnId, columnIndex);
+-                footerScrollContent.addView(statView);
+-            }
+-        }
+-    }
+-
+-    // 在统计行更新单元格时考虑超限状态
+-    private void updateFooterCell(String columnId, double value) {
+-        TextView statView = footerCellMap.get(columnId);
+-        if (statView != null) {
+-            if (value == 0) {
+-                statView.setText("0");
+-            } else {
+-                if (value == (int) value) {
+-                    statView.setText(String.valueOf((int) value));
+-                } else {
+-                    statView.setText(String.format(java.util.Locale.ROOT, "%.2f", value));
+-                }
+-            }
+-            statView.setTextColor(0xFF0000FF);
+-        }
+-    }
+-
+-    // 计算有数据的行数
+-    private int getFilledRowCount() {
+-        int count = 0;
+-        for (FeedData data : dataList) {
+-            if (data.getShedCount() > 0) {
+-                count++;
+-            }
+-        }
+-        return count;
+-    }
+-
+-    // 显示下载对话框
+-    private void showDownloadDialog() {
+-        try {
+-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+-            boolean neverShow = prefs.getBoolean(KEY_NEVER_SHOW_DOWNLOAD_DIALOG, false);
+-
+-            if (neverShow) {
+-                return;
+-            }
+-
+-            final String downloadUrl = "https://github.com/DTxiaweibing/-2/releases/download/%E5%85%BB%E8%99%BE%E5%8A%A9%E6%89%8B1.63.8.61/1.63.8.61.apk";
+-            String message = getString(R.string.mix_msg_install_app);
+-
+-            showStyledConfirmDialog70(getString(R.string.mix_title_install_app), message,
+-                new String[]{getString(R.string.mix_btn_later), getString(R.string.mix_btn_no_prompt), getString(R.string.mix_btn_download)},
+-                new int[]{0xFF666666, 0xFF999999, 0xFF2196F3},
+-                new DialogInterface.OnClickListener[]{
+-                    null,
+-                    (dialog, which) -> {
+-                        SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+-                        sp.edit().putBoolean(KEY_NEVER_SHOW_DOWNLOAD_DIALOG, true).apply();
+-                        Toast.makeText(MixCalcActivity.this, getString(R.string.mix_toast_dismiss_download), Toast.LENGTH_SHORT).show();
+-                    },
+-                    (dialog, which) -> {
+-                        Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl));
+-                        try {
+-                            startActivity(browserIntent);
+-                        } catch (Exception e) {
+-                            showStyledConfirmDialog70(getString(R.string.mix_title_open_link_fail),
+-                                getString(R.string.mix_msg_open_link_fail, downloadUrl),
+-                                new String[]{getString(R.string.btn_cancel), getString(R.string.mix_btn_copy_link)},
+-                                new int[]{0xFF666666, 0xFF2196F3},
+-                                new DialogInterface.OnClickListener[]{
+-                                    null,
+-                                    (d, w) -> {
+-                                        android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+-                                        android.content.ClipData clip = android.content.ClipData.newPlainText("下载链接", downloadUrl);
+-                                        clipboard.setPrimaryClip(clip);
+-                                        Toast.makeText(MixCalcActivity.this, getString(R.string.mix_toast_link_copied), Toast.LENGTH_SHORT).show();
+-                                    }
+-                                });
+-                        }
+-                    }
+-                });
+-
+-        } catch (Exception e) {
+-            Log.e(TAG, "显示下载对话框异常: " + e.getMessage());
+-            Toast.makeText(this, getString(R.string.mix_toast_download_fail), Toast.LENGTH_SHORT).show();
+-        }
+-    }
+-
+-    private void resetAllData() {
+-        try {
+-            for (FeedData data : dataList) {
+-                data.setShedNumber("");
+-                data.setShedCountDirectly(0, false);
+-                data.setFermentedFeed(0);
+-                data.setPowderFeed(0);
+-                data.setFeed03(0);
+-                data.setFeed05(0);
+-                data.setFeed10(0);
+-                data.setWater(0);
+-                data.setWeighedFeed(0);
+-                data.setAverage(0);
+-                data.setShedCountManuallyModified(false);
+-                data.setAverageManuallyModified(false);
+-                data.setSwitchRatio(0);
+-            }
+-
+-            rebuildCompleteTable();
+-            saveAllData();
+-
+-            Toast.makeText(this, getString(R.string.mix_toast_reset_done), Toast.LENGTH_SHORT).show();
+-        } catch (Exception e) {
+-            Log.e(TAG, "重置数据异常: " + e.getMessage());
+-        }
+-    }
+-
+-    private void buildDataRows(int scrollWidth) {
+-        try {
+-            for (int i = 0; i < dataList.size(); i++) {
+-                buildDataRow(i, scrollWidth);
+-            }
+-        } catch (Exception e) {
+-            Log.e(TAG, "构建数据行异常: " + e.getMessage());
+-        }
+-    }
+-
+-    private void buildDataRow(final int rowIndex, int scrollWidth) {
+-        LinearLayout rowLayout = new LinearLayout(this);
+-        rowLayout.setOrientation(LinearLayout.HORIZONTAL);
+-        rowLayout.setLayoutParams(new LinearLayout.LayoutParams(
+-                                      LinearLayout.LayoutParams.MATCH_PARENT, 
+-                                      dpToPx(40)
+-                                  ));
+-        rowLayoutMap.put(rowIndex, rowLayout);
+-
+-        LinearLayout fixedLayout = buildFixedColumns(rowIndex);
+-        rowLayout.addView(fixedLayout);
+-        fixedDataRows.add(fixedLayout);
+-
+-        HorizontalScrollView scrollView = buildScrollColumns(rowIndex, scrollWidth);
+-        rowLayout.addView(scrollView);
+-        rowScrollViews.add(scrollView);
+-
+-        dataContent.addView(rowLayout);
+-    }
+-
+-    private LinearLayout buildFixedColumns(final int rowIndex) {
+-        LinearLayout fixedLayout = new LinearLayout(this);
+-        fixedLayout.setOrientation(LinearLayout.HORIZONTAL);
+-
+-        int fixedWidth = 0;
+-
+-        View seqView = createDataCell("seq", rowIndex, 0);
+-        fixedLayout.addView(seqView);
+-        fixedWidth += adaptiveColumnWidths[0];
+-
+-        for (int i = 1; i < columnIds.length; i++) {
+-            final int columnIndex = i;
+-            String columnId = columnIds[i];
+-            boolean visible = columnVisibility.get(columnId);
+-            boolean fixed = columnFixed.get(columnId);
+-
+-            if (visible && fixed) {
+-                View cellView = createDataCell(columnId, rowIndex, columnIndex);
+-                fixedLayout.addView(cellView);
+-                fixedWidth += adaptiveColumnWidths[columnIndex];
+-            }
+-        }
+-
+-        fixedLayout.setLayoutParams(new LinearLayout.LayoutParams(
+-                                        fixedWidth,
+-                                        dpToPx(40)
+-                                    ));
+-
+-        return fixedLayout;
+-    }
+-
+-    @SuppressLint("ClickableViewAccessibility")
+-    private HorizontalScrollView buildScrollColumns(final int rowIndex, int scrollWidth) {
+-        HorizontalScrollView scrollView = new HorizontalScrollView(this);
+-        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
+-                                       0,
+-                                       dpToPx(40),
+-                                       1.0f
+-                                   ));
+-        scrollView.setHorizontalScrollBarEnabled(false);
+-        scrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+-
+-        scrollView.setOnTouchListener(new View.OnTouchListener() {
+-                @Override
+-                public boolean onTouch(View v, MotionEvent event) {
+-                    switch (event.getAction()) {
+-                        case MotionEvent.ACTION_DOWN:
+-                            lastX = event.getX();
+-                            lastY = event.getY();
+-                            isHorizontalScroll = false;
+-                            break;
+-
+-                        case MotionEvent.ACTION_MOVE:
+-                            float deltaX = Math.abs(event.getX() - lastX);
+-                            float deltaY = Math.abs(event.getY() - lastY);
+-
+-                            if (deltaX > deltaY && deltaX > 5) {
+-                                isHorizontalScroll = true;
+-                                if (verticalScrollView != null) {
+-                                    verticalScrollView.requestDisallowInterceptTouchEvent(true);
+-                                }
+-                            }
+-                            break;
+-
+-                        case MotionEvent.ACTION_UP:
+-                        case MotionEvent.ACTION_CANCEL:
+-                            isHorizontalScroll = false;
+-                            if (verticalScrollView != null) {
+-                                verticalScrollView.requestDisallowInterceptTouchEvent(false);
+-                            }
+-                            break;
+-                    }
+-                    v.performClick();
+-                    return false;
+-                }
+-            });
+-
+-        LinearLayout scrollContent = new LinearLayout(this);
+-        scrollContent.setOrientation(LinearLayout.HORIZONTAL);
+-        scrollContent.setLayoutParams(new LinearLayout.LayoutParams(
+-                                          scrollWidth,
+-                                          dpToPx(40)
+-                                      ));
+-
+-        for (int i = 0; i < columnIds.length; i++) {
+-            final int columnIndex = i;
+-            String columnId = columnIds[i];
+-            boolean visible = columnVisibility.get(columnId);
+-            boolean fixed = columnFixed.get(columnId);
+-
+-            if (visible && !fixed) {
+-                View cellView = createDataCell(columnId, rowIndex, columnIndex);
+-                scrollContent.addView(cellView);
+-            }
+-        }
+-
+-        scrollView.addView(scrollContent);
+-        return scrollView;
+-    }
+-
+-    private View createDataCell(final String columnId, final int rowIndex, final int columnIndex) {
+-        boolean isEditable = isEditableColumn(columnId);
+-
+-        if (isEditable) {
+-            final EditText cellView = new EditText(this);
+-
+-            cellView.setLayoutParams(new LinearLayout.LayoutParams(
+-                                         adaptiveColumnWidths[columnIndex],
+-                                         dpToPx(40)
+-                                     ));
+-
+-            cellView.setGravity(Gravity.CENTER);
+-            cellView.setTextSize(12);
+-            cellView.setTypeface(cellView.getTypeface(), android.graphics.Typeface.BOLD);
+-            cellView.setBackgroundResource(R.drawable.cell_border);
+-            cellView.setPadding(0, 0, 0, 0);
+-            cellView.setSingleLine(true);
+-            cellView.setTag(rowIndex + "_" + columnId);
+-
+-            if ("shed_number".equals(columnId)) {
+-                cellView.setInputType(InputType.TYPE_CLASS_TEXT);
+-                cellView.setSingleLine(true);
+-                cellView.setGravity(Gravity.CENTER);
+-            } else {
+-                cellView.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+-            }
+-
+-            cellView.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+-
+-            FeedData data = dataList.get(rowIndex);
+-            String initialValue = getCellInitialValue(data, columnId);
+-            cellView.setText(initialValue);
+-
+-            if ("average_feed".equals(columnId)) {
+-                cellView.setTextColor(0xFF0000FF);
+-            }
+-
+-            boolean isEnabled = isCellEnabled(columnId, data, rowIndex);
+-            cellView.setEnabled(isEnabled);
+-
+-            if (!isEnabled && !"average_feed".equals(columnId)) {
+-                cellView.setBackgroundResource(R.drawable.cell_border_disabled);
+-            }
+-
+-            // 已设置换料比例时，给粒径较大的非发酵料格加淡绿提示底色
+-            if (isEnabled && isSwitchRatioCell(data, columnId)) {
+-                cellView.setBackgroundResource(R.drawable.cell_border_ratio);
+-            }
+-
+-            cellViewMap.put(rowIndex + "_" + columnId, cellView);
+-
+-            if ("shed_number".equals(columnId)) {
+-                cellView.addTextChangedListener(new TextWatcher() {
+-                        @Override
+-                        public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+-                        }
+-
+-                        @Override
+-                        public void onTextChanged(CharSequence s, int start, int before, int count) {
+-                        }
+-
+-                        @Override
+-                        public void afterTextChanged(Editable s) {
+-                            String text = s.toString().trim();
+-                            final FeedData data = dataList.get(rowIndex);
+-                            data.setShedNumber(text);
+-                            data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-                            updateShedCountDisplay(rowIndex, data);
+-                            updateCalculatedCells(rowIndex);
+-                            updateRowInputEnabled(rowIndex);
+-                            updateFooterRow();
+-                            saveAllData();
+-                            checkShedCountLimitAndUpdateInput();
+-                        }
+-                    });
+-            } else if ("shed_count".equals(columnId)) {
+-                final int[] oldValue = {data.getShedCount()};
+-
+-                cellView.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+-                        @Override
+-                        public void onFocusChange(View v, boolean hasFocus) {
+-                            if (!hasFocus) {
+-                                String text = ((EditText)v).getText().toString().trim();
+-                                final FeedData data = dataList.get(rowIndex);
+-
+-                                double newValue = 0;
+-                                if (!text.isEmpty()) {
+-                                    try {
+-                                        newValue = Double.parseDouble(text);
+-                                    } catch (NumberFormatException e) {
+-                                        newValue = 0;
+-                                        ((EditText)v).setText("");
+-                                    }
+-                                }
+-
+-                                if (oldValue[0] != (int)newValue) {
+-                                    data.setShedCount((int)newValue);
+-
+-                                    if (newValue == 0 || text.isEmpty()) {
+-                                        data.setShedCountManuallyModified(false);
+-                                    } else {
+-                                        data.setShedCountManuallyModified(true);
+-                                    }
+-                                }
+-
+-                                oldValue[0] = (int)newValue;
+-
+-                                data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-                                updateCalculatedCells(rowIndex);
+-                                updateRowInputEnabled(rowIndex);
+-                                updateFooterRow();
+-                                saveAllData();
+-                                checkShedCountLimitAndUpdateInput();
+-                            } else {
+-                                String text = ((EditText)v).getText().toString().trim();
+-                                if (!text.isEmpty()) {
+-                                    try {
+-                                        oldValue[0] = Integer.parseInt(text);
+-                                    } catch (NumberFormatException e) {
+-                                        oldValue[0] = 0;
+-                                    }
+-                                } else {
+-                                    oldValue[0] = 0;
+-                                }
+-                            }
+-                        }
+-                    });
+-            } else if ("average_feed".equals(columnId)) {
+-                addAverageFeedTextWatcher(cellView, rowIndex, columnId, columnIndex);
+-            } else {
+-                if (isNonFermentedFeedColumn(columnId)) {
+-                    cellView.setOnLongClickListener(new View.OnLongClickListener() {
+-                        @Override
+-                        public boolean onLongClick(View v) {
+-                            FeedData d = dataList.get(rowIndex);
+-                            String larger = getLargerNonFermentedColumn(d);
+-                            if (larger != null && larger.equals(columnId)) {
+-                                showSwitchRatioDrawer(d, v);
+-                                return true;
+-                            }
+-                            return false;
+-                        }
+-                    });
+-                }
+-                cellView.addTextChangedListener(new TextWatcher() {
+-                        @Override
+-                        public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+-                        }
+-
+-                        @Override
+-                        public void onTextChanged(CharSequence s, int start, int before, int count) {
+-                        }
+-
+-                        @Override
+-                        public void afterTextChanged(Editable s) {
+-                            if (isUpdatingAverageCell) {
+-                                return;
+-                            }
+-                            String text = s.toString().trim();
+-                            final FeedData data = dataList.get(rowIndex);
+-                            data.setAverageManuallyModified(false);
+-
+-                            double value = 0;
+-                            if (!text.isEmpty()) {
+-                                try {
+-                                    value = Double.parseDouble(text);
+-                                } catch (NumberFormatException e) {
+-                                    value = 0;
+-                                }
+-                            }
+-
+-                            switch (columnId) {
+-                                case "fermented":
+-                                    data.setFermentedFeed(value);
+-                                    break;
+-                                case "powder":
+-                                    data.setPowderFeed(value);
+-                                    break;
+-                                case "feed03":
+-                                    data.setFeed03(value);
+-                                    break;
+-                                case "feed05":
+-                                    data.setFeed05(value);
+-                                    break;
+-                                case "feed10":
+-                                    data.setFeed10(value);
+-                                    break;
+-                            }
+-
+-                            // 手改任意料格：以最后一次改动为准，作废已设置的换料比例，回到两料实际比例
+-                            if ("fermented".equals(columnId) || isNonFermentedFeedColumn(columnId)) {
+-                                data.setSwitchRatio(0);
+-                            }
+-
+-                            data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-                            updateCalculatedCells(rowIndex);
+-                            updateAverageCellEnabledState(rowIndex, data);
+-                            refreshSwitchRatioIndicator(rowIndex);
+-                            updateFooterRow();
+-                            saveAllData();
+-                            checkShedCountLimitAndUpdateInput();
+-                        }
+-                    });
+-            }
+-
+-            return cellView;
+-        } else {
+-            TextView cellView = new TextView(this);
+-
+-            cellView.setLayoutParams(new LinearLayout.LayoutParams(
+-                                         adaptiveColumnWidths[columnIndex],
+-                                         dpToPx(40)
+-                                     ));
+-
+-            cellView.setGravity(Gravity.CENTER);
+-            cellView.setTextSize(12);
+-            cellView.setTypeface(cellView.getTypeface(), android.graphics.Typeface.BOLD);
+-            cellView.setBackgroundResource(R.drawable.cell_border);
+-            cellView.setPadding(0, 0, 0, 0);
+-
+-            cellView.setTag(rowIndex + "_" + columnId);
+-            cellViewMap.put(rowIndex + "_" + columnId, cellView);
+-
+-            FeedData data = dataList.get(rowIndex);
+-
+-            if ("seq".equals(columnId)) {
+-                cellView.setText(String.valueOf(rowIndex + 1));
+-                cellView.setTextColor(0xFF666666);
+-            } else if ("shed_number".equals(columnId)) {
+-                String shedName = data.getShedNumber();
+-                if (shedName == null || shedName.isEmpty()) {
+-                    cellView.setText(getString(R.string.shed_number_format, rowIndex + 1));
+-                } else {
+-                    cellView.setText(shedName);
+-                    cellView.setSingleLine(true);
+-                    cellView.setGravity(Gravity.CENTER_VERTICAL | Gravity.CENTER_HORIZONTAL);
+-                    cellView.setPadding(0, 0, 0, 0);
+-                }
+-                cellView.setTextColor(Color.BLACK);
+-            } else {
+-                String displayValue = getCellDisplayValue(data, columnId);
+-                cellView.setText(displayValue);
+-
+-                if ("average_feed".equals(columnId) || "water".equals(columnId) || "weighed_feed".equals(columnId)) {
+-                    cellView.setTextColor(0xFF0000FF);
+-                } else {
+-                    cellView.setTextColor(Color.BLACK);
+-                }
+-            }
+-
+-            return cellView;
+-        }
+-    }
+-
+-    // 移动到下一个可编辑单元格
+-    private void moveFocusToNextEditableCell(int currentRow, int currentColumnIndex) {
+-        try {
+-            String currentColumnId = columnIds[currentColumnIndex];
+-
+-            for (int nextColIndex = currentColumnIndex + 1; nextColIndex < columnIds.length; nextColIndex++) {
+-                String nextColumnId = columnIds[nextColIndex];
+-
+-                if (columnVisibility.get(nextColumnId) && 
+-                    isEditableColumn(nextColumnId)) {
+-
+-                    FeedData data = dataList.get(currentRow);
+-                    if (isCellEnabled(nextColumnId, data, currentRow)) {
+-                        View nextCell = cellViewMap.get(currentRow + "_" + nextColumnId);
+-                        if (nextCell != null && nextCell instanceof EditText) {
+-                            nextCell.requestFocus();
+-                            ((EditText)nextCell).selectAll();
+-                            return;
+-                        }
+-                    }
+-                }
+-            }
+-
+-            int nextRow = currentRow + 1;
+-            if (nextRow < dataList.size()) {
+-                for (int colIndex = 0; colIndex < columnIds.length; colIndex++) {
+-                    String columnId = columnIds[colIndex];
+-
+-                    if (columnVisibility.get(columnId) && 
+-                        isEditableColumn(columnId)) {
+-
+-                        FeedData data = dataList.get(nextRow);
+-                        if (isCellEnabled(columnId, data, nextRow)) {
+-                            View nextCell = cellViewMap.get(nextRow + "_" + columnId);
+-                            if (nextCell != null && nextCell instanceof EditText) {
+-                                nextCell.requestFocus();
+-                                ((EditText)nextCell).selectAll();
+-                                return;
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-
+-            View currentView = cellViewMap.get(currentRow + "_" + currentColumnId);
+-            if (currentView != null && currentView.hasFocus()) {
+-                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+-                imm.hideSoftInputFromWindow(currentView.getWindowToken(), 0);
+-            }
++                    Toast.makeText(MixCalcActivity.this, getString(R.string.mix_toast_no_change), Toast.LENGTH_SHORT).show();
++                }
++            });
+ 
+         } catch (Exception e) {
+-            Log.e(TAG, "移动焦点异常: " + e.getMessage());
+-        }
+-    }
+-
+-    // 检查单元格是否应该启用
+-    private boolean isCellEnabled(String columnId, FeedData data, int rowIndex) {
+-        if ("shed_number".equals(columnId) || "shed_count".equals(columnId)) {
+-            return true;
+-        } else if ("average_feed".equals(columnId)) {
+-            return data.canEditAverage();
+-        } else {
+-            return data.getShedCount() > 0;
++            Log.e(TAG, "显示发酵料计算设置对话框异常: " + e.getMessage());
++            Toast.makeText(this, getString(R.string.mix_toast_setting_fail), Toast.LENGTH_SHORT).show();
+         }
+     }
+ 
+-    private boolean isNonFermentedFeedColumn(String columnId) {
+-        for (String c : NF_FEED_COLUMNS) {
+-            if (c.equals(columnId)) {
+-                return true;
++    // 计算有数据的行数
++    private int getFilledRowCount() {
++        int count = 0;
++        for (FeedData data : dataList) {
++            if (data.getShedCount() > 0) {
++                count++;
+             }
+         }
+-        return false;
++        return count;
+     }
+ 
+-    private double getFeedValueByColumn(FeedData data, String columnId) {
+-        switch (columnId) {
+-            case "powder": return data.getPowderFeed();
+-            case "feed03": return data.getFeed03();
+-            case "feed05": return data.getFeed05();
+-            case "feed10": return data.getFeed10();
+-            default: return 0;
+-        }
+-    }
++    // 显示下载对话框
++    private void showDownloadDialog() {
++        try {
++            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
++            boolean neverShow = prefs.getBoolean(KEY_NEVER_SHOW_DOWNLOAD_DIALOG, false);
+ 
+-    // 非发酵料恰好两种时，返回粒径较大的那个列的 id；否则返回 null
+-    private String getLargerNonFermentedColumn(FeedData data) {
+-        int count = 0;
+-        String larger = null;
+-        for (String c : NF_FEED_COLUMNS) {
+-            if (getFeedValueByColumn(data, c) > 0) {
+-                count++;
+-                larger = c;
++            if (neverShow) {
++                return;
+             }
+-        }
+-        return count == 2 ? larger : null;
+-    }
+ 
+-    // 该料格是否为"已设置换料比例"的提示格（粒径较大的那个非发酵料）
+-    private boolean isSwitchRatioCell(FeedData data, String columnId) {
+-        if (data == null || data.getSwitchRatio() <= 0) {
+-            return false;
++            final String downloadUrl = "https://github.com/DTxiaweibing/-2/releases/download/%E5%85%BB%E8%99%BE%E5%8A%A9%E6%89%8B1.63.8.61/1.63.8.61.apk";
++            String message = getString(R.string.mix_msg_install_app);
++
++            showStyledConfirmDialog70(getString(R.string.mix_title_install_app), message,
++                new String[]{getString(R.string.mix_btn_later), getString(R.string.mix_btn_no_prompt), getString(R.string.mix_btn_download)},
++                new int[]{0xFF666666, 0xFF999999, 0xFF2196F3},
++                new DialogInterface.OnClickListener[]{
++                    null,
++                    (dialog, which) -> {
++                        SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
++                        sp.edit().putBoolean(KEY_NEVER_SHOW_DOWNLOAD_DIALOG, true).apply();
++                        Toast.makeText(MixCalcActivity.this, getString(R.string.mix_toast_dismiss_download), Toast.LENGTH_SHORT).show();
++                    },
++                    (dialog, which) -> {
++                        Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl));
++                        try {
++                            startActivity(browserIntent);
++                        } catch (Exception e) {
++                            showStyledConfirmDialog70(getString(R.string.mix_title_open_link_fail),
++                                getString(R.string.mix_msg_open_link_fail, downloadUrl),
++                                new String[]{getString(R.string.btn_cancel), getString(R.string.mix_btn_copy_link)},
++                                new int[]{0xFF666666, 0xFF2196F3},
++                                new DialogInterface.OnClickListener[]{
++                                    null,
++                                    (d, w) -> {
++                                        android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
++                                        android.content.ClipData clip = android.content.ClipData.newPlainText("下载链接", downloadUrl);
++                                        clipboard.setPrimaryClip(clip);
++                                        Toast.makeText(MixCalcActivity.this, getString(R.string.mix_toast_link_copied), Toast.LENGTH_SHORT).show();
++                                    }
++                                });
++                        }
++                    }
++                });
++
++        } catch (Exception e) {
++            Log.e(TAG, "显示下载对话框异常: " + e.getMessage());
++            Toast.makeText(this, getString(R.string.mix_toast_download_fail), Toast.LENGTH_SHORT).show();
+         }
+-        String larger = getLargerNonFermentedColumn(data);
+-        return larger != null && larger.equals(columnId);
+     }
+ 
+-    // 刷新某行四个非发酵料格的背景，用于提示换料比例是否生效
+-    private void refreshSwitchRatioIndicator(int rowIndex) {
+-        FeedData data = dataList.get(rowIndex);
+-        for (String c : NF_FEED_COLUMNS) {
+-            View v = cellViewMap.get(rowIndex + "_" + c);
+-            if (v instanceof EditText) {
+-                EditText et = (EditText) v;
+-                if (!et.isEnabled()) {
+-                    continue;
+-                }
+-                et.setBackgroundResource(isSwitchRatioCell(data, c)
+-                        ? R.drawable.cell_border_ratio : R.drawable.cell_border);
++    private void resetAllData() {
++        try {
++            for (FeedData data : dataList) {
++                data.setShedNumber("");
++                data.setShedCountDirectly(0, false);
++                data.setFermentedFeed(0);
++                data.setPowderFeed(0);
++                data.setFeed03(0);
++                data.setFeed05(0);
++                data.setFeed10(0);
++                data.setWater(0);
++                data.setWeighedFeed(0);
++                data.setAverage(0);
++                data.setShedCountManuallyModified(false);
++                data.setAverageManuallyModified(false);
++                data.setSwitchRatio(0);
+             }
++
++            rebuildCompleteTable();
++            saveAllData();
++
++            Toast.makeText(this, getString(R.string.mix_toast_reset_done), Toast.LENGTH_SHORT).show();
++        } catch (Exception e) {
++            Log.e(TAG, "重置数据异常: " + e.getMessage());
+         }
+     }
+ 
+     // 长按较大料格：竖直抽屉式菜单选择换料比例(10%~90%)，当前比例打勾
+-    private void showSwitchRatioDrawer(final FeedData data, View anchor) {
++    private void showSwitchRatioDrawer(final FeedData data, final Rect cellRect) {
+         try {
+             View popupView = getLayoutInflater().inflate(R.layout.popup_switch_ratio, null);
+             LinearLayout container = popupView.findViewById(R.id.ratio_items_container);
+@@ -3106,9 +1598,8 @@ public class MixCalcActivity extends BaseActivity {
+ 
+                 itemRow.setOnClickListener(v -> {
+                     data.setSwitchRatio(ratio);
+-                    int ri = dataList.indexOf(data);
+-                    if (ri >= 0) {
+-                        refreshSwitchRatioIndicator(ri);
++                    if (table != null) {
++                        table.notifyAllChanged();
+                     }
+                     saveAllData();
+                     popup.dismiss();
+@@ -3128,147 +1619,69 @@ public class MixCalcActivity extends BaseActivity {
+             DisplayMetrics dm = getResources().getDisplayMetrics();
+             popup.setWidth(Math.min(dm.widthPixels, dpToPx(160)));
+             popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+-            popup.showAsDropDown(anchor, 0, 0);
++
++            int[] loc = new int[2];
++            if (table != null) {
++                table.getLocationOnScreen(loc);
++            }
++            int x = loc[0] + (cellRect != null ? cellRect.left : 0);
++            int y = loc[1] + (cellRect != null ? cellRect.bottom : 0);
++            popup.showAtLocation(table, Gravity.NO_GRAVITY, x, y);
+         } catch (Exception e) {
+             Log.e(TAG, "showSwitchRatioDrawer: " + e.getMessage(), e);
+         }
+     }
+ 
+-    // 更新行的输入状态
+-    private void updateRowInputEnabled(int rowIndex) {
+-        FeedData data = dataList.get(rowIndex);
+-
+-        String[] editableColumns = {"fermented", "powder", "feed03", "feed05", "feed10", "shed_number", "shed_count", "average_feed"};
+-        for (String columnId : editableColumns) {
+-            View view = cellViewMap.get(rowIndex + "_" + columnId);
+-            if (view instanceof EditText) {
+-                EditText editText = (EditText) view;
+-                boolean isEnabled = isCellEnabled(columnId, data, rowIndex);
+-
+-                editText.setEnabled(isEnabled);
+-
+-                if ("average_feed".equals(columnId)) {
+-                    editText.setBackgroundResource(R.drawable.cell_border);
+-                    continue;
+-                }
+-
+-                if ("shed_count".equals(columnId)) {
+-                    if (data.getShedCount() > 0 && isShedCountExceeded) {
+-                        editText.setBackground(warningShedCountBg);
+-                    } else {
+-                        editText.setBackground(normalShedCountBg);
+-                    }
+-                } else {
+-                    if (isEnabled) {
+-                        editText.setBackgroundResource(isSwitchRatioCell(data, columnId)
+-                                ? R.drawable.cell_border_ratio : R.drawable.cell_border);
+-                    } else {
+-                        editText.setBackgroundResource(R.drawable.cell_border_disabled);
+-                        if (!"shed_number".equals(columnId)) {
+-                            editText.setText("");
+-
+-                            switch (columnId) {
+-                                case "fermented":
+-                                    data.setFermentedFeed(0);
+-                                    break;
+-                                case "powder":
+-                                    data.setPowderFeed(0);
+-                                    break;
+-                                case "feed03":
+-                                    data.setFeed03(0);
+-                                    break;
+-                                case "feed05":
+-                                    data.setFeed05(0);
+-                                    break;
+-                                case "feed10":
+-                                    data.setFeed10(0);
+-                                    break;
+-                            }
+-                        }
+-                    }
+-                }
+-            }
++    // 检查单元格是否应该启用
++    private boolean isCellEnabled(String columnId, FeedData data, int rowIndex) {
++        if ("shed_number".equals(columnId) || "shed_count".equals(columnId)) {
++            return true;
++        } else if ("average_feed".equals(columnId)) {
++            return data.canEditAverage();
++        } else {
++            return data.getShedCount() > 0;
+         }
+-
+-        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-        updateCalculatedCells(rowIndex);
+-        saveAllData();
+     }
+ 
+-    private void updateShedCountDisplay(int rowIndex, FeedData data) {
+-        if (rowIndex < 0 || data == null) return;
+-        
+-        View shedCountView = cellViewMap.get(rowIndex + "_shed_count");
+-        if (shedCountView instanceof EditText) {
+-            if (!data.isShedCountManuallyModified()) {
+-                String displayValue = data.getShedCount() == 0 ? "" : String.valueOf(data.getShedCount());
+-                ((EditText)shedCountView).setText(displayValue);
++    private boolean isNonFermentedFeedColumn(String columnId) {
++        for (String c : NF_FEED_COLUMNS) {
++            if (c.equals(columnId)) {
++                return true;
+             }
+         }
+-        // 检查是否需要加载其他列监听器
+-        checkAndLoadOtherColumnListeners(rowIndex);
++        return false;
+     }
+ 
+-    // 更新计算列
+-    private void updateCalculatedCells(int rowIndex) {
+-        try {
+-            FeedData data = dataList.get(rowIndex);
+-
+-            // 更新平均吃料单元格
+-            View averageFeedView = cellViewMap.get(rowIndex + "_average_feed");
+-            if (averageFeedView instanceof TextView) {
+-                // 使用新的方法获取平均吃料值，考虑是否包含发酵料
+-                double averageValue = data.getAverage(fermentedIncludedInAverage);
+-                String displayValue = averageValue == 0 ? "" : formatNumber(averageValue);
+-                TextView averageTextView = (TextView) averageFeedView;
+-                boolean isEditing = (averageTextView instanceof EditText) && averageTextView.hasFocus();
+-                if (!isEditing && !averageTextView.getText().toString().trim().equals(displayValue)) {
+-                    boolean previousFlag = isUpdatingAverageCell;
+-                    isUpdatingAverageCell = true;
+-                    try {
+-                        averageTextView.setText(displayValue);
+-                    } finally {
+-                        isUpdatingAverageCell = previousFlag;
+-                    }
+-                }
+-                averageTextView.setTextColor(0xFF0000FF);
+-            }
+-
+-            // 更新水单元格
+-            View waterView = cellViewMap.get(rowIndex + "_water");
+-            if (waterView instanceof TextView) {
+-                double waterValue = data.getWater();
+-                String displayValue = waterValue == 0 ? "" : formatNumber(waterValue);
+-                ((TextView)waterView).setText(displayValue);
+-                ((TextView)waterView).setTextColor(0xFF0000FF);
+-            }
+-
+-            // 更新称料单元格
+-            View weighedFeedView = cellViewMap.get(rowIndex + "_weighed_feed");
+-            if (weighedFeedView instanceof TextView) {
+-                double weighedFeed = data.getWeighedFeed();
+-                int shedCount = data.getShedCount();
+-
+-                String displayValue = "";
+-                if (shedCount > 0 && weighedFeed > 0) {
+-                    if (weighedFeed == (int) weighedFeed) {
+-                        displayValue = String.valueOf((int) weighedFeed) + "×" + shedCount;
+-                    } else {
+-                        displayValue = String.format(java.util.Locale.ROOT, "%.2f", weighedFeed) + "×" + shedCount;
+-                    }
+-                }
+-                ((TextView)weighedFeedView).setText(displayValue);
+-                ((TextView)weighedFeedView).setTextColor(0xFF0000FF);
+-            }
++    private double getFeedValueByColumn(FeedData data, String columnId) {
++        switch (columnId) {
++            case "powder": return data.getPowderFeed();
++            case "feed03": return data.getFeed03();
++            case "feed05": return data.getFeed05();
++            case "feed10": return data.getFeed10();
++            default: return 0;
++        }
++    }
+ 
+-            // 手动平均模式下，反向计算的料量需要同步到对应料格
+-            if (data.isAverageManuallyModified()) {
+-                syncFeedCellsFromModel(rowIndex, data);
++    // 非发酵料恰好两种时，返回粒径较大的那个列的 id；否则返回 null
++    private String getLargerNonFermentedColumn(FeedData data) {
++        int count = 0;
++        String larger = null;
++        for (String c : NF_FEED_COLUMNS) {
++            if (getFeedValueByColumn(data, c) > 0) {
++                count++;
++                larger = c;
+             }
++        }
++        return count == 2 ? larger : null;
++    }
+ 
+-        } catch (Exception e) {
+-            Log.e(TAG, "更新计算单元格异常: " + e.getMessage());
++    // 该料格是否为"已设置换料比例"的提示格（粒径较大的那个非发酵料）
++    private boolean isSwitchRatioCell(FeedData data, String columnId) {
++        if (data == null || data.getSwitchRatio() <= 0) {
++            return false;
+         }
++        String larger = getLargerNonFermentedColumn(data);
++        return larger != null && larger.equals(columnId);
+     }
+ 
+     // 更新所有计算
+@@ -3278,9 +1691,11 @@ public class MixCalcActivity extends BaseActivity {
+                 FeedData data = dataList.get(i);
+                 // 重新计算所有行，传入两个标志
+                 data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+-                updateCalculatedCells(i);
+             }
+ 
++            if (table != null) {
++                table.notifyAllChanged();
++            }
+             updateFooterRow();
+             saveAllData();
+ 
+@@ -3289,14 +1704,6 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    // 更新序号列统计行
+-    private void updateSeqStatView() {
+-        if (seqStatTextView != null) {
+-            int filledRows = getFilledRowCount();
+-            seqStatTextView.setText(getString(R.string.seq_stat_format, filledRows, TOTAL_ROWS));
+-        }
+-    }
+-
+     private String getCellInitialValue(FeedData data, String columnId) {
+         switch (columnId) {
+             case "shed_number":
+@@ -3373,7 +1780,9 @@ public class MixCalcActivity extends BaseActivity {
+             "feed10".equals(columnId);
+     }
+ 
+-    private void showColumnOperationMenu(final int columnIndex, final String columnId, View view) {
++    // ==================== 列操作 ====================
++
++    private void showColumnOperationMenu(final int columnIndex, final String columnId) {
+         try {
+             boolean isVisible = columnVisibility.get(columnId);
+             boolean isFixed = columnFixed.get(columnId);
+@@ -3429,12 +1838,7 @@ public class MixCalcActivity extends BaseActivity {
+                 return;
+             }
+ 
+-            new Handler().postDelayed(new Runnable() {
+-                    @Override
+-                    public void run() {
+-                        rebuildCompleteTable();
+-                    }
+-                }, 100);
++            rebuildCompleteTable();
+ 
+         } catch (Exception e) {
+             Log.e(TAG, "处理列操作异常: " + e.getMessage());
+@@ -3485,70 +1889,6 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    private void setupScrollSync() {
+-        try {
+-            headerScrollView.setHorizontalScrollBarEnabled(false);
+-            footerScrollView.setHorizontalScrollBarEnabled(false);
+-
+-            for (HorizontalScrollView scrollView : rowScrollViews) {
+-                scrollView.setHorizontalScrollBarEnabled(false);
+-            }
+-
+-            setupScrollViewListener(headerScrollView);
+-            setupScrollViewListener(footerScrollView);
+-
+-            for (HorizontalScrollView scrollView : rowScrollViews) {
+-                setupScrollViewListener(scrollView);
+-            }
+-
+-        } catch (Exception e) {
+-            Log.e(TAG, "设置滚动同步异常: " + e.getMessage());
+-        }
+-    }
+-
+-    private void setupScrollViewListener(final HorizontalScrollView scrollView) {
+-        if (scrollView == null) return;
+-
+-        ViewTreeObserver.OnScrollChangedListener listener = new ViewTreeObserver.OnScrollChangedListener() {
+-            @Override
+-            public void onScrollChanged() {
+-                if (!isSyncing && scrollView != null) {
+-                    isSyncing = true;
+-                    int newScrollX = scrollView.getScrollX();
+-                    if (newScrollX != currentScrollX) {
+-                        currentScrollX = newScrollX;
+-                        syncAllScrollViews(currentScrollX, scrollView);
+-                    }
+-                    isSyncing = false;
+-                }
+-            }
+-        };
+-
+-        scrollView.getViewTreeObserver().addOnScrollChangedListener(listener);
+-        scrollListeners.add(listener);
+-    }
+-
+-    private void syncAllScrollViews(int scrollX, HorizontalScrollView source) {
+-        try {
+-            if (headerScrollView != null && headerScrollView != source) {
+-                headerScrollView.scrollTo(scrollX, 0);
+-            }
+-
+-            if (footerScrollView != null && footerScrollView != source) {
+-                footerScrollView.scrollTo(scrollX, 0);
+-            }
+-
+-            for (HorizontalScrollView rowScrollView : rowScrollViews) {
+-                if (rowScrollView != null && rowScrollView != source) {
+-                    rowScrollView.scrollTo(scrollX, 0);
+-                }
+-            }
+-
+-        } catch (Exception e) {
+-            Log.e(TAG, "同步滚动视图异常: " + e.getMessage());
+-        }
+-    }
+-
+     private void showWaterPercentageDialog() {
+         try {
+             final String[] percentages = {"10", "15", "20", "25", "30", "35", "40"};
+@@ -3560,8 +1900,8 @@ public class MixCalcActivity extends BaseActivity {
+             showStyledListDialog(getString(R.string.mix_title_water_pct), displayTexts, (dialog, which) -> {
+                 try {
+                     globalWaterPercentage = Integer.parseInt(percentages[which]);
+-                    updateWaterHeader();
+                     saveGlobalWaterPercentage();
++                    // updateAllCalculations 会重绘（表头水百分比也由 provider 重新取）
+                     updateAllCalculations();
+                     Toast.makeText(MixCalcActivity.this, getString(R.string.mix_water_pct_format, globalWaterPercentage), Toast.LENGTH_SHORT).show();
+                 } catch (Exception e) {
+@@ -3574,30 +1914,6 @@ public class MixCalcActivity extends BaseActivity {
+         }
+     }
+ 
+-    private void updateWaterHeader() {
+-        try {
+-            updateWaterCells(fixedHeaderContainer);
+-            updateWaterCells(headerScrollContent);
+-        } catch (Exception e) {
+-            Log.e(TAG, "更新水列表头异常: " + e.getMessage());
+-        }
+-    }
+-
+-    private void updateWaterCells(LinearLayout container) {
+-        if (container != null) {
+-            for (int i = 0; i < container.getChildCount(); i++) {
+-                View child = container.getChildAt(i);
+-                if (child instanceof TextView) {
+-                    TextView tv = (TextView) child;
+-                    String waterPrefix = getString(R.string.mix_col_water);
+-                    if (tv.getText().toString().startsWith(waterPrefix)) {
+-                        tv.setText(getString(R.string.water_percentage_header, globalWaterPercentage));
+-                    }
+-                }
+-            }
+-        }
+-    }
+-
+     private int dpToPx(int dp) {
+         try {
+             float density = getResources().getDisplayMetrics().density;
+diff --git a/app/src/main/java/com/shrimpfarm/app/mixcalc/table/CellEditorOverlay.java b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/CellEditorOverlay.java
+new file mode 100644
+index 0000000..3ff6caf
+--- /dev/null
++++ b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/CellEditorOverlay.java
+@@ -0,0 +1,205 @@
++package com.shrimpfarm.app.mixcalc.table;
++
++import android.content.Context;
++import android.graphics.Rect;
++import android.graphics.Typeface;
++import android.text.Editable;
++import android.text.TextWatcher;
++import android.view.Gravity;
++import android.view.View;
++import android.view.inputmethod.EditorInfo;
++import android.view.inputmethod.InputMethodManager;
++import android.widget.EditText;
++
++import com.shrimpfarm.app.R;
++
++/**
++ * 单元格编辑浮层：整张表只有一个 {@link EditText}，需要编辑时才显示在命中格上头。
++ *
++ * <p>它把编辑入口从"每个可编辑格常驻一个 EditText"改成"整表一个浮层"，但用户看到的仍是原生
++ * 输入法 / 焦点 / 光标，输入体验不变。</p>
++ *
++ * <p>职责：</p>
++ * <ul>
++ *   <li>{@link #begin}：把浮层精确贴到命中格上并唤起输入法</li>
++ *   <li>文本变化即实时回调 {@link OnCellEditListener#onCellCommitted}（保留原有"边输边算"）</li>
++ *   <li>{@link #onScrolled}：滚动时跟随移动；滚出可见区则提交并收起</li>
++ *   <li>输入法"下一个" → 回调 {@link OnCellEditListener#onEditNext}</li>
++ * </ul>
++ */
++class CellEditorOverlay {
++
++    private final MixCalcTableView table;
++    private final Context context;
++    private final EditText editText;
++
++    private int row = -1;
++    private TableColumn column;
++    private boolean editing;
++    /** 程序化设置文本期间抑制回调，避免"打开即提交"。 */
++    private boolean suppress;
++
++    CellEditorOverlay(MixCalcTableView table) {
++        this.table = table;
++        this.context = table.getContext();
++
++        editText = new EditText(context);
++        editText.setVisibility(View.GONE);
++        editText.setBackgroundResource(R.drawable.cell_border);
++        editText.setGravity(Gravity.CENTER);
++        editText.setTextSize(12);
++        editText.setTypeface(editText.getTypeface(), Typeface.BOLD);
++        editText.setPadding(0, 0, 0, 0);
++        editText.setSingleLine(true);
++        editText.setImeOptions(EditorInfo.IME_ACTION_NEXT);
++
++        editText.addTextChangedListener(new TextWatcher() {
++            @Override
++            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
++            }
++
++            @Override
++            public void onTextChanged(CharSequence s, int start, int before, int count) {
++            }
++
++            @Override
++            public void afterTextChanged(Editable s) {
++                if (suppress || !editing || column == null) {
++                    return;
++                }
++                OnCellEditListener listener = table.editListener();
++                if (listener != null) {
++                    listener.onCellCommitted(row, column.id, s.toString());
++                }
++            }
++        });
++
++        editText.setOnEditorActionListener((v, actionId, event) -> {
++            if (actionId == EditorInfo.IME_ACTION_NEXT && editing && column != null) {
++                OnCellEditListener listener = table.editListener();
++                if (listener != null) {
++                    listener.onEditNext(row, column.id);
++                }
++                return true;
++            }
++            return false;
++        });
++    }
++
++    /** 把浮层挂到表格里（唯一子 View）。 */
++    void attach() {
++        table.addView(editText);
++    }
++
++    /**
++     * 打开编辑浮层。
++     *
++     * <p>若当前正在编辑另一格，先把旧格提交（不隐藏浮层），再平滑切到新格，输入法不闪断。</p>
++     */
++    void begin(int row, TableColumn column) {
++        if (column == null || !column.editable) {
++            return;
++        }
++        if (editing && (this.row != row || this.column == null || !this.column.id.equals(column.id))) {
++            commitInternal();
++        }
++
++        this.row = row;
++        this.column = column;
++        editing = true;
++
++        suppress = true;
++        try {
++            editText.setInputType(column.inputType);
++            editText.setTextColor(column.textColor);
++            String text = table.textProvider() == null
++                    ? ""
++                    : table.textProvider().getCellText(row, column.id);
++            editText.setText(text == null ? "" : text);
++            editText.setSelection(editText.getText().length());
++        } finally {
++            suppress = false;
++        }
++
++        if (editText.getVisibility() != View.VISIBLE) {
++            editText.setVisibility(View.VISIBLE);
++        }
++        layoutChild();
++        if (!editText.hasFocus()) {
++            editText.requestFocus();
++        }
++        showIme();
++    }
++
++    /** 提交并收起浮层。 */
++    void end() {
++        if (!editing) {
++            return;
++        }
++        editing = false;
++        commitInternal();
++        editText.setVisibility(View.GONE);
++    }
++
++    /** 表格滚动后调用：跟随移动，滚出可见区则结束。 */
++    void onScrolled() {
++        if (!editing || column == null) {
++            return;
++        }
++        if (!table.isCellVisible(row, column.id)) {
++            end();
++            return;
++        }
++        layoutChild();
++    }
++
++    /** 列配置/尺寸变化后调用：重定位，必要时结束。 */
++    void onMetricsChanged() {
++        if (!editing || column == null) {
++            return;
++        }
++        if (!table.isCellVisible(row, column.id)) {
++            end();
++            return;
++        }
++        layoutChild();
++    }
++
++    /** 依据命中格矩形摆放浮层（表格 onLayout 与滚动时都会调用）。 */
++    void layoutChild() {
++        if (!editing || column == null) {
++            return;
++        }
++        Rect r = table.getCellRect(row, column.id);
++        if (r == null) {
++            return;
++        }
++        int w = Math.max(0, r.width());
++        int h = Math.max(0, r.height());
++        editText.measure(
++                View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
++                View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
++        editText.layout(r.left, r.top, r.right, r.bottom);
++    }
++
++    private void commitInternal() {
++        OnCellEditListener listener = table.editListener();
++        if (listener == null || column == null || row < 0) {
++            return;
++        }
++        listener.onCellCommitted(row, column.id, editText.getText().toString());
++    }
++
++    private void showIme() {
++        editText.post(() -> {
++            if (!editText.isAttachedToWindow()) {
++                return;
++            }
++            InputMethodManager imm = (InputMethodManager)
++                    context.getSystemService(Context.INPUT_METHOD_SERVICE);
++            if (imm != null) {
++                imm.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT);
++            }
++        });
++    }
++}
+diff --git a/app/src/main/java/com/shrimpfarm/app/mixcalc/table/CellStyle.java b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/CellStyle.java
+new file mode 100644
+index 0000000..f99adea
+--- /dev/null
++++ b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/CellStyle.java
+@@ -0,0 +1,188 @@
++package com.shrimpfarm.app.mixcalc.table;
++
++import android.content.Context;
++import android.graphics.Paint;
++import android.graphics.Typeface;
++import android.util.TypedValue;
++
++/**
++ * 集中所有画笔与颜色，全部在构造期建好并复用。
++ *
++ * <p>颜色取自原有 drawable，保证自绘外观与改造前一致：
++ * 普通格白底黑边 0.5dp、禁用格 #F0F0F0 灰边、换料比例提示格 #F0F8F0、
++ * 棚数超限警告格 #FFC64B 红边 1dp、表尾蓝/洋红按钮。</p>
++ */
++public class CellStyle {
++
++    // ---- 单元格视觉状态（由 CellTextProvider 提供）----
++    public static final int STATE_NORMAL = 0;
++    public static final int STATE_DISABLED = 1;
++    public static final int STATE_HIGHLIGHT = 2;
++    public static final int STATE_WARNING = 3;
++
++    // ---- 表头视觉状态（由 CellTextProvider 提供）----
++    public static final int HEADER_NORMAL = 0;
++    public static final int HEADER_FERMENTED_GREEN_BROWN = 1;
++    public static final int HEADER_FERMENTED_GRAY_BROWN = 2;
++    public static final int HEADER_FERMENTED_GREEN = 3;
++    public static final int HEADER_FERMENTED_GRAY = 4;
++
++    // ---- 表尾样式（由 CellTextProvider 提供）----
++    public static final int FOOTER_NORMAL = 0;
++    public static final int FOOTER_SEQ = 1;
++    public static final int FOOTER_BLUE = 2;
++    public static final int FOOTER_CARMINE = 3;
++
++    public final Paint fillPaint = new Paint();
++    public final Paint borderPaint = new Paint();
++    public final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
++    public final Paint headerTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
++
++    public final float borderWidth;
++    public final float boldBorderWidth;
++
++    public final int headerBg = 0xFFE8F5E9;
++    public final int footerBg = 0xFFF0F0F0;
++    public final int bodyBg = 0xFFFFFFFF;
++
++    public final int cellFill = 0xFFFFFFFF;
++    public final int cellStroke = 0xFF000000;
++    public final int cellDisabledFill = 0xFFF0F0F0;
++    public final int cellDisabledStroke = 0xFFCCCCCC;
++    public final int cellRatioFill = 0xFFF0F8F0;
++    public final int cellWarningFill = 0xFFFFC64B;
++    public final int cellWarningStroke = 0xFFFF0000;
++
++    public final int buttonBlueFill = 0xFF000042;
++    public final int buttonCarmineFill = 0xFF960018;
++
++    public final int fermentedFillGreen = 0xFFF0F8F0;
++    public final int fermentedFillGray = 0xFFF0F0F0;
++    public final int fermentedStrokeBrown = 0xFF6E511E;
++    public final int fermentedStrokeBlack = 0xFF000000;
++
++    public final int textWhite = 0xFFFFFFFF;
++    public final int textBlack = 0xFF000000;
++    public final int textValue = 0xFF0000FF;
++    public final int textSeq = 0xFF666666;
++
++    /** 冻结列与滚动列交界处的分隔线颜色。 */
++    public final int frozenDivider = 0x33000000;
++
++    public final int rowHeight;
++    public final int headerHeight;
++    public final int footerHeight;
++
++    public CellStyle(Context context, int rowHeightPx, int headerHeightPx, int footerHeightPx) {
++        this.rowHeight = rowHeightPx;
++        this.headerHeight = headerHeightPx;
++        this.footerHeight = footerHeightPx;
++
++        float density = context.getResources().getDisplayMetrics().density;
++        float textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 12,
++                context.getResources().getDisplayMetrics());
++
++        borderWidth = Math.max(1f, 0.5f * density);
++        boldBorderWidth = Math.max(2f, 1f * density);
++
++        fillPaint.setStyle(Paint.Style.FILL);
++        fillPaint.setAntiAlias(false);
++
++        borderPaint.setStyle(Paint.Style.STROKE);
++        borderPaint.setAntiAlias(false);
++        borderPaint.setStrokeWidth(borderWidth);
++
++        textPaint.setStyle(Paint.Style.FILL);
++        textPaint.setTextAlign(Paint.Align.CENTER);
++        textPaint.setTextSize(textSize);
++        textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
++
++        headerTextPaint.set(textPaint);
++    }
++
++    /** 正文格填充色。 */
++    public int bodyFill(int state) {
++        switch (state) {
++            case STATE_DISABLED:
++                return cellDisabledFill;
++            case STATE_HIGHLIGHT:
++                return cellRatioFill;
++            case STATE_WARNING:
++                return cellWarningFill;
++            default:
++                return cellFill;
++        }
++    }
++
++    /** 正文格边框色。 */
++    public int bodyStroke(int state) {
++        switch (state) {
++            case STATE_DISABLED:
++                return cellDisabledStroke;
++            case STATE_WARNING:
++                return cellWarningStroke;
++            default:
++                return cellStroke;
++        }
++    }
++
++    /** 正文格边框宽度。 */
++    public float bodyStrokeWidth(int state) {
++        return state == STATE_WARNING ? boldBorderWidth : borderWidth;
++    }
++
++    /** 表头填充色。 */
++    public int headerFill(int state) {
++        switch (state) {
++            case HEADER_FERMENTED_GREEN_BROWN:
++            case HEADER_FERMENTED_GREEN:
++                return fermentedFillGreen;
++            case HEADER_FERMENTED_GRAY_BROWN:
++            case HEADER_FERMENTED_GRAY:
++                return fermentedFillGray;
++            default:
++                return cellFill;
++        }
++    }
++
++    /** 表头边框色。 */
++    public int headerStroke(int state) {
++        switch (state) {
++            case HEADER_FERMENTED_GREEN_BROWN:
++            case HEADER_FERMENTED_GRAY_BROWN:
++                return fermentedStrokeBrown;
++            default:
++                return fermentedStrokeBlack;
++        }
++    }
++
++    /** 表头边框宽度。 */
++    public float headerStrokeWidth(int state) {
++        switch (state) {
++            case HEADER_FERMENTED_GREEN_BROWN:
++            case HEADER_FERMENTED_GRAY_BROWN:
++                return boldBorderWidth * 3f;
++            default:
++                return borderWidth;
++        }
++    }
++
++    /** 表尾填充色。 */
++    public int footerFill(int style) {
++        if (style == FOOTER_BLUE) {
++            return buttonBlueFill;
++        }
++        if (style == FOOTER_CARMINE) {
++            return buttonCarmineFill;
++        }
++        return cellFill;
++    }
++
++    /** 表尾文本色。 */
++    public int footerTextColor(int style) {
++        if (style == FOOTER_BLUE || style == FOOTER_CARMINE) {
++            return textWhite;
++        }
++        return textValue;
++    }
++}
+diff --git a/app/src/main/java/com/shrimpfarm/app/mixcalc/table/CellTextProvider.java b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/CellTextProvider.java
+new file mode 100644
+index 0000000..105bb4f
+--- /dev/null
++++ b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/CellTextProvider.java
+@@ -0,0 +1,31 @@
++package com.shrimpfarm.app.mixcalc.table;
++
++/**
++ * 由宿主（MixCalcActivity）实现，向自绘表格提供所有"要显示成什么样"的内容与状态。
++ *
++ * <p>业务规则（是否禁用、是否高亮、表头文案、表尾统计）全部留在宿主，
++ * 引擎只负责几何与绘制。</p>
++ */
++public interface CellTextProvider {
++
++    /** 表头文案（水列带百分比、发酵料列可带状态）。 */
++    String getHeaderText(String columnId);
++
++    /** 表头视觉状态，取值 {@link CellStyle#HEADER_NORMAL} 等。 */
++    int getHeaderState(String columnId);
++
++    /** 单元格显示文本。 */
++    String getCellText(int row, String columnId);
++
++    /** 单元格视觉状态，取值 {@link CellStyle#STATE_NORMAL} 等。 */
++    int getCellState(int row, String columnId);
++
++    /** 该单元格此刻是否允许进入编辑（可编辑列且业务上已启用）。 */
++    boolean isCellEditable(int row, String columnId);
++
++    /** 表尾文本。 */
++    String getFooterText(String columnId);
++
++    /** 表尾样式，取值 {@link CellStyle#FOOTER_NORMAL} 等。 */
++    int getFooterStyle(String columnId);
++}
+diff --git a/app/src/main/java/com/shrimpfarm/app/mixcalc/table/MixCalcTableView.java b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/MixCalcTableView.java
+new file mode 100644
+index 0000000..8b6e093
+--- /dev/null
++++ b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/MixCalcTableView.java
+@@ -0,0 +1,716 @@
++package com.shrimpfarm.app.mixcalc.table;
++
++import android.content.Context;
++import android.graphics.Canvas;
++import android.graphics.Paint;
++import android.graphics.Rect;
++import android.text.TextUtils;
++import android.util.AttributeSet;
++import android.view.MotionEvent;
++import android.view.VelocityTracker;
++import android.view.View;
++import android.view.ViewConfiguration;
++import android.view.ViewGroup;
++import android.widget.OverScroller;
++
++import com.shrimpfarm.app.mixcalc.model.FeedData;
++
++import java.util.ArrayList;
++import java.util.List;
++
++/**
++ * 自绘表格：整张表只有一个坐标系、一个 View。
++ *
++ * <p>横滚 / 纵滚 / 冻结列 / 吸顶表头 / 吸底表尾 全部由两个偏移量与统一几何决定：</p>
++ * <ul>
++ *   <li>横向只有一个 {@code offsetX}，表头与表尾复用同一偏移 → 横滚时一起动、天然对齐</li>
++ *   <li>表头 y 钉在 0、表尾 y 钉在底部 → 纵滚时都不动</li>
++ *   <li>固定列绘制时不加横向偏移 → 冻结</li>
++ * </ul>
++ *
++ * <p>不存在"多个滚动容器互相同步"，因此不存在拖尾、回弹与边界错位。</p>
++ */
++public class MixCalcTableView extends ViewGroup {
++
++    private final List<FeedData> rows = new ArrayList<>();
++    private TableColumnConfig config;
++    private CellTextProvider textProvider;
++    private OnCellTapListener tapListener;
++    private OnCellEditListener editListener;
++
++    private final TableMetrics metrics = new TableMetrics();
++    private final CellStyle style;
++    private final CellEditorOverlay editor;
++
++    private final OverScroller scroller;
++    private final int rowHeight;
++    private final int headerHeight;
++    private final int footerHeight;
++    private final int touchSlop;
++    private final int minFlingVelocity;
++    private final int maxFlingVelocity;
++    private final int longPressTimeout;
++
++    private VelocityTracker velocityTracker;
++    private int offsetX;
++    private int offsetY;
++
++    private float downX;
++    private float downY;
++    private float lastX;
++    private float lastY;
++    private boolean dragging;
++    private boolean longPressFired;
++    private boolean metricsReady;
++
++    private final Runnable longPressRunnable = new Runnable() {
++        @Override
++        public void run() {
++            if (dragging || longPressFired) {
++                return;
++            }
++            longPressFired = true;
++            handleLongPress(downX, downY);
++        }
++    };
++
++    public MixCalcTableView(Context context) {
++        this(context, null);
++    }
++
++    public MixCalcTableView(Context context, AttributeSet attrs) {
++        super(context, attrs);
++        setWillNotDraw(false);
++        setClipChildren(true);
++        setClipToPadding(true);
++
++        rowHeight = dp(context, 40);
++        headerHeight = dp(context, 40);
++        footerHeight = dp(context, 40);
++        style = new CellStyle(context, rowHeight, headerHeight, footerHeight);
++
++        ViewConfiguration vc = ViewConfiguration.get(context);
++        touchSlop = vc.getScaledTouchSlop();
++        minFlingVelocity = vc.getScaledMinimumFlingVelocity();
++        maxFlingVelocity = vc.getScaledMaximumFlingVelocity();
++        longPressTimeout = ViewConfiguration.getLongPressTimeout();
++
++        scroller = new OverScroller(context);
++        editor = new CellEditorOverlay(this);
++        editor.attach();
++    }
++
++    // ------------------------------------------------------------------
++    // 对外接口
++    // ------------------------------------------------------------------
++
++    public void setColumnConfig(TableColumnConfig config) {
++        this.config = config;
++        requestRebuild();
++    }
++
++    public void setRows(List<FeedData> rows) {
++        this.rows.clear();
++        if (rows != null) {
++            this.rows.addAll(rows);
++        }
++        requestRebuild();
++    }
++
++    public void setCellTextProvider(CellTextProvider provider) {
++        this.textProvider = provider;
++    }
++
++    public void setOnCellTapListener(OnCellTapListener listener) {
++        this.tapListener = listener;
++    }
++
++    public void setOnCellEditListener(OnCellEditListener listener) {
++        this.editListener = listener;
++    }
++
++    /** 列配置或行数变化后调用：重新测量布局并重绘。 */
++    public void requestRebuild() {
++        requestLayout();
++        invalidate();
++    }
++
++    /** 全部数据变化：重新钳制偏移并整表重绘。 */
++    public void notifyAllChanged() {
++        clampOffsets();
++        editor.onScrolled();
++        invalidate();
++    }
++
++    /** 单个单元格变化：局部重绘。 */
++    public void notifyCellChanged(int row, String columnId) {
++        Rect r = getCellRect(row, columnId);
++        if (r == null) {
++            invalidate();
++            return;
++        }
++        invalidate(r.left - 2, r.top - 2, r.right + 2, r.bottom + 2);
++    }
++
++    public void scrollToX(int x) {
++        offsetX = clamp(x, 0, metrics.maxScrollX);
++        onOffsetChanged();
++    }
++
++    public int getTableScrollX() {
++        return offsetX;
++    }
++
++    public boolean beginEdit(int row, String columnId) {
++        if (config == null) {
++            return false;
++        }
++        TableColumn col = config.get(columnId);
++        if (col == null || !col.editable) {
++            return false;
++        }
++        editor.begin(row, col);
++        return true;
++    }
++
++    public void endEdit() {
++        editor.end();
++    }
++
++    /** 单元格在表格视图内的矩形（供弹窗做锚点）。 */
++    public Rect getCellRect(int row, String columnId) {
++        if (!metricsReady || metrics.visual.isEmpty()) {
++            return null;
++        }
++        int vi = metrics.visualIndex(columnId);
++        if (vi < 0) {
++            return null;
++        }
++        TableColumn col = metrics.visual.get(vi);
++        int x = metrics.xOf(vi, offsetX);
++        int y = metrics.yOfRow(row, offsetY);
++        return new Rect(x, y, x + col.widthPx, y + metrics.rowHeight);
++    }
++
++    public Rect getHeaderRect(String columnId) {
++        if (!metricsReady || metrics.visual.isEmpty()) {
++            return null;
++        }
++        int vi = metrics.visualIndex(columnId);
++        if (vi < 0) {
++            return null;
++        }
++        TableColumn col = metrics.visual.get(vi);
++        int x = metrics.xOf(vi, offsetX);
++        return new Rect(x, 0, x + col.widthPx, metrics.headerHeight);
++    }
++
++    public Rect getFooterRect(String columnId) {
++        if (!metricsReady || metrics.visual.isEmpty()) {
++            return null;
++        }
++        int vi = metrics.visualIndex(columnId);
++        if (vi < 0) {
++            return null;
++        }
++        TableColumn col = metrics.visual.get(vi);
++        int x = metrics.xOf(vi, offsetX);
++        int top = getHeight() - metrics.footerHeight;
++        return new Rect(x, top, x + col.widthPx, getHeight());
++    }
++
++    /** 该格是否处于可见区（编辑浮层据此决定是否提交并隐藏）。 */
++    public boolean isCellVisible(int row, String columnId) {
++        Rect r = getCellRect(row, columnId);
++        if (r == null) {
++            return false;
++        }
++        int bodyTop = metrics.headerHeight;
++        int bodyBottom = getHeight() - metrics.footerHeight;
++        if (r.bottom <= bodyTop + 1 || r.top >= bodyBottom - 1) {
++            return false;
++        }
++        int vi = metrics.visualIndex(columnId);
++        boolean fixed = vi < metrics.fixedCount;
++        int left = fixed ? 0 : metrics.fixedWidth;
++        int right = fixed ? metrics.fixedWidth : getWidth();
++        return r.right > left + 1 && r.left < right - 1;
++    }
++
++    // 以下包内访问，供 CellEditorOverlay 使用
++    CellStyle style() {
++        return style;
++    }
++
++    TableMetrics metrics() {
++        return metrics;
++    }
++
++    CellTextProvider textProvider() {
++        return textProvider;
++    }
++
++    OnCellEditListener editListener() {
++        return editListener;
++    }
++
++    TableColumnConfig config() {
++        return config;
++    }
++
++    // ------------------------------------------------------------------
++    // 测量 / 布局
++    // ------------------------------------------------------------------
++
++    @Override
++    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
++        int w = MeasureSpec.getSize(widthMeasureSpec);
++        int h = MeasureSpec.getSize(heightMeasureSpec);
++        setMeasuredDimension(w, h);
++
++        metricsReady = true;
++        metrics.rebuild(config, rows.size(), w, h, rowHeight, headerHeight, footerHeight);
++        clampOffsets();
++        editor.onMetricsChanged();
++    }
++
++    @Override
++    protected void onLayout(boolean changed, int l, int t, int r, int b) {
++        editor.layoutChild();
++    }
++
++    @Override
++    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
++        super.onSizeChanged(w, h, oldw, oldh);
++        if (w != oldw || h != oldh) {
++            metrics.rebuild(config, rows.size(), w, h, rowHeight, headerHeight, footerHeight);
++            clampOffsets();
++        }
++    }
++
++    @Override
++    protected void onDetachedFromWindow() {
++        super.onDetachedFromWindow();
++        removeCallbacks(longPressRunnable);
++        releaseVelocityTracker();
++    }
++
++    // ------------------------------------------------------------------
++    // 滚动
++    // ------------------------------------------------------------------
++
++    @Override
++    public void computeScroll() {
++        if (scroller.computeScrollOffset()) {
++            offsetX = scroller.getCurrX();
++            offsetY = scroller.getCurrY();
++            onOffsetChanged();
++            postInvalidateOnAnimation();
++        }
++    }
++
++    private boolean scrollByTable(int dx, int dy) {
++        int nx = clamp(offsetX + dx, 0, metrics.maxScrollX);
++        int ny = clamp(offsetY + dy, 0, metrics.maxScrollY);
++        if (nx == offsetX && ny == offsetY) {
++            return false;
++        }
++        offsetX = nx;
++        offsetY = ny;
++        onOffsetChanged();
++        return true;
++    }
++
++    private void onOffsetChanged() {
++        editor.onScrolled();
++        invalidate();
++    }
++
++    private void clampOffsets() {
++        offsetX = clamp(offsetX, 0, metrics.maxScrollX);
++        offsetY = clamp(offsetY, 0, metrics.maxScrollY);
++    }
++
++    // ------------------------------------------------------------------
++    // 触摸
++    // ------------------------------------------------------------------
++
++    @Override
++    public boolean onTouchEvent(MotionEvent ev) {
++        if (config == null || metrics.visual.isEmpty()) {
++            return false;
++        }
++
++        switch (ev.getActionMasked()) {
++            case MotionEvent.ACTION_DOWN:
++                scroller.forceFinished(true);
++                downX = ev.getX();
++                downY = ev.getY();
++                lastX = downX;
++                lastY = downY;
++                dragging = false;
++                longPressFired = false;
++                if (velocityTracker == null) {
++                    velocityTracker = VelocityTracker.obtain();
++                } else {
++                    velocityTracker.clear();
++                }
++                velocityTracker.addMovement(ev);
++                removeCallbacks(longPressRunnable);
++                postDelayed(longPressRunnable, longPressTimeout);
++                return true;
++
++            case MotionEvent.ACTION_MOVE: {
++                if (velocityTracker != null) {
++                    velocityTracker.addMovement(ev);
++                }
++                if (!dragging) {
++                    if (Math.abs(ev.getX() - downX) > touchSlop
++                            || Math.abs(ev.getY() - downY) > touchSlop) {
++                        dragging = true;
++                        removeCallbacks(longPressRunnable);
++                        lastX = ev.getX();
++                        lastY = ev.getY();
++                    }
++                    return true;
++                }
++                int dx = (int) (lastX - ev.getX());
++                int dy = (int) (lastY - ev.getY());
++                lastX = ev.getX();
++                lastY = ev.getY();
++                scrollByTable(dx, dy);
++                return true;
++            }
++
++            case MotionEvent.ACTION_UP:
++                removeCallbacks(longPressRunnable);
++                if (dragging) {
++                    if (velocityTracker != null) {
++                        velocityTracker.addMovement(ev);
++                        velocityTracker.computeCurrentVelocity(1000, maxFlingVelocity);
++                        int vx = (int) velocityTracker.getXVelocity();
++                        int vy = (int) velocityTracker.getYVelocity();
++                        if (Math.abs(vx) > minFlingVelocity || Math.abs(vy) > minFlingVelocity) {
++                            scroller.fling(offsetX, offsetY, -vx, -vy,
++                                    0, metrics.maxScrollX, 0, metrics.maxScrollY);
++                            postInvalidateOnAnimation();
++                        }
++                    }
++                } else if (!longPressFired) {
++                    performClick();
++                    handleTap(ev.getX(), ev.getY());
++                }
++                dragging = false;
++                longPressFired = false;
++                releaseVelocityTracker();
++                return true;
++
++            case MotionEvent.ACTION_CANCEL:
++                removeCallbacks(longPressRunnable);
++                dragging = false;
++                longPressFired = false;
++                releaseVelocityTracker();
++                return true;
++
++            default:
++                return true;
++        }
++    }
++
++    @Override
++    public boolean performClick() {
++        return super.performClick();
++    }
++
++    private void handleTap(float x, float y) {
++        if (y < metrics.headerHeight) {
++            editor.end();
++            int vi = metrics.visualIndexAt(x, offsetX);
++            if (vi >= 0 && tapListener != null) {
++                tapListener.onHeaderClick(metrics.visual.get(vi).id);
++            }
++            return;
++        }
++        if (y >= getHeight() - metrics.footerHeight) {
++            editor.end();
++            int vi = metrics.visualIndexAt(x, offsetX);
++            if (vi >= 0 && tapListener != null) {
++                tapListener.onFooterClick(metrics.visual.get(vi).id);
++            }
++            return;
++        }
++
++        int row = metrics.rowAt(y, offsetY);
++        int vi = metrics.visualIndexAt(x, offsetX);
++        if (row < 0 || vi < 0) {
++            editor.end();
++            return;
++        }
++        TableColumn col = metrics.visual.get(vi);
++
++        if (col.editable
++                && (textProvider == null || textProvider.isCellEditable(row, col.id))) {
++            editor.begin(row, col);
++        } else {
++            editor.end();
++        }
++        if (tapListener != null) {
++            tapListener.onCellClick(row, col.id);
++        }
++    }
++
++    private void handleLongPress(float x, float y) {
++        if (tapListener == null) {
++            return;
++        }
++        editor.end();
++        if (y < metrics.headerHeight) {
++            int vi = metrics.visualIndexAt(x, offsetX);
++            if (vi >= 0) {
++                TableColumn col = metrics.visual.get(vi);
++                tapListener.onHeaderLongPress(col.id, getHeaderRect(col.id));
++            }
++            return;
++        }
++        if (y >= getHeight() - metrics.footerHeight) {
++            return;
++        }
++        int row = metrics.rowAt(y, offsetY);
++        int vi = metrics.visualIndexAt(x, offsetX);
++        if (row < 0 || vi < 0) {
++            return;
++        }
++        TableColumn col = metrics.visual.get(vi);
++        tapListener.onCellLongPress(row, col.id, getCellRect(row, col.id));
++    }
++
++    private void releaseVelocityTracker() {
++        if (velocityTracker != null) {
++            velocityTracker.recycle();
++            velocityTracker = null;
++        }
++    }
++
++    // ------------------------------------------------------------------
++    // 绘制
++    // ------------------------------------------------------------------
++
++    @Override
++    protected void onDraw(Canvas canvas) {
++        super.onDraw(canvas);
++        if (config == null || metrics.visual.isEmpty()) {
++            return;
++        }
++
++        int h = getHeight();
++        drawRegionBg(canvas, 0, 0, getWidth(), metrics.headerHeight, style.headerBg);
++        drawRegionBg(canvas, 0, metrics.headerHeight, getWidth(), h - metrics.footerHeight, style.bodyBg);
++        drawRegionBg(canvas, 0, h - metrics.footerHeight, getWidth(), h, style.footerBg);
++
++        drawBody(canvas);
++        drawHeader(canvas);
++        drawFooter(canvas);
++        drawFrozenDivider(canvas);
++    }
++
++    private void drawRegionBg(Canvas canvas, int left, int top, int right, int bottom, int color) {
++        if (bottom <= top) {
++            return;
++        }
++        style.fillPaint.setStyle(Paint.Style.FILL);
++        style.fillPaint.setColor(color);
++        canvas.drawRect(left, top, right, bottom, style.fillPaint);
++    }
++
++    private void drawBody(Canvas canvas) {
++        int top = metrics.headerHeight;
++        int bottom = getHeight() - metrics.footerHeight;
++        if (bottom <= top || metrics.rowCount <= 0) {
++            return;
++        }
++
++        int firstRow = Math.max(0, offsetY / metrics.rowHeight);
++        int lastRow = Math.min(metrics.rowCount - 1,
++                (offsetY + (bottom - top) - 1) / metrics.rowHeight);
++        if (firstRow > lastRow) {
++            return;
++        }
++
++        // 1. 非固定列（clip 到固定列右侧，滚动内容不会盖住冻结列）
++        canvas.save();
++        canvas.clipRect(metrics.fixedWidth, top, getWidth(), bottom);
++        for (int vi = metrics.fixedCount; vi < metrics.visual.size(); vi++) {
++            TableColumn col = metrics.visual.get(vi);
++            int x = metrics.xOf(vi, offsetX);
++            if (x >= getWidth() || x + col.widthPx <= metrics.fixedWidth) {
++                continue;
++            }
++            for (int r = firstRow; r <= lastRow; r++) {
++                drawBodyCell(canvas, col, x, metrics.yOfRow(r, offsetY), r);
++            }
++        }
++        canvas.restore();
++
++        // 2. 固定列
++        canvas.save();
++        canvas.clipRect(0, top, metrics.fixedWidth, bottom);
++        for (int vi = 0; vi < metrics.fixedCount; vi++) {
++            TableColumn col = metrics.visual.get(vi);
++            int x = metrics.xOf(vi, offsetX);
++            for (int r = firstRow; r <= lastRow; r++) {
++                drawBodyCell(canvas, col, x, metrics.yOfRow(r, offsetY), r);
++            }
++        }
++        canvas.restore();
++    }
++
++    private void drawBodyCell(Canvas canvas, TableColumn col, int x, int y, int row) {
++        int state = textProvider == null
++                ? CellStyle.STATE_NORMAL
++                : textProvider.getCellState(row, col.id);
++        int left = x;
++        int top = y;
++        int right = x + col.widthPx;
++        int bottom = y + metrics.rowHeight;
++
++        drawBox(canvas, left, top, right, bottom,
++                style.bodyFill(state), style.bodyStroke(state), style.bodyStrokeWidth(state));
++
++        String text = textProvider == null ? "" : textProvider.getCellText(row, col.id);
++        drawCellText(canvas, text, left, top, right, bottom, col.textColor);
++    }
++
++    private void drawHeader(Canvas canvas) {
++        int h = metrics.headerHeight;
++
++        canvas.save();
++        canvas.clipRect(metrics.fixedWidth, 0, getWidth(), h);
++        for (int vi = metrics.fixedCount; vi < metrics.visual.size(); vi++) {
++            TableColumn col = metrics.visual.get(vi);
++            int x = metrics.xOf(vi, offsetX);
++            if (x >= getWidth() || x + col.widthPx <= metrics.fixedWidth) {
++                continue;
++            }
++            drawHeaderCell(canvas, col, x, h);
++        }
++        canvas.restore();
++
++        canvas.save();
++        canvas.clipRect(0, 0, metrics.fixedWidth, h);
++        for (int vi = 0; vi < metrics.fixedCount; vi++) {
++            TableColumn col = metrics.visual.get(vi);
++            drawHeaderCell(canvas, col, metrics.xOf(vi, offsetX), h);
++        }
++        canvas.restore();
++    }
++
++    private void drawHeaderCell(Canvas canvas, TableColumn col, int x, int bottom) {
++        int state = textProvider == null
++                ? CellStyle.HEADER_NORMAL
++                : textProvider.getHeaderState(col.id);
++        int left = x;
++        int top = 0;
++        int right = x + col.widthPx;
++
++        drawBox(canvas, left, top, right, bottom,
++                style.headerFill(state), style.headerStroke(state), style.headerStrokeWidth(state));
++
++        String text = textProvider == null ? "" : textProvider.getHeaderText(col.id);
++        drawCellText(canvas, text, left, top, right, bottom, style.textBlack);
++    }
++
++    private void drawFooter(Canvas canvas) {
++        int top = getHeight() - metrics.footerHeight;
++        int bottom = getHeight();
++
++        canvas.save();
++        canvas.clipRect(metrics.fixedWidth, top, getWidth(), bottom);
++        for (int vi = metrics.fixedCount; vi < metrics.visual.size(); vi++) {
++            TableColumn col = metrics.visual.get(vi);
++            int x = metrics.xOf(vi, offsetX);
++            if (x >= getWidth() || x + col.widthPx <= metrics.fixedWidth) {
++                continue;
++            }
++            drawFooterCell(canvas, col, x, top, bottom);
++        }
++        canvas.restore();
++
++        canvas.save();
++        canvas.clipRect(0, top, metrics.fixedWidth, bottom);
++        for (int vi = 0; vi < metrics.fixedCount; vi++) {
++            TableColumn col = metrics.visual.get(vi);
++            drawFooterCell(canvas, col, metrics.xOf(vi, offsetX), top, bottom);
++        }
++        canvas.restore();
++    }
++
++    private void drawFooterCell(Canvas canvas, TableColumn col, int x, int top, int bottom) {
++        int footerStyle = textProvider == null
++                ? CellStyle.FOOTER_NORMAL
++                : textProvider.getFooterStyle(col.id);
++        int left = x;
++        int right = x + col.widthPx;
++
++        drawBox(canvas, left, top, right, bottom,
++                style.footerFill(footerStyle), style.cellStroke, style.borderWidth);
++
++        String text = textProvider == null ? "" : textProvider.getFooterText(col.id);
++        drawCellText(canvas, text, left, top, right, bottom, style.footerTextColor(footerStyle));
++    }
++
++    private void drawFrozenDivider(Canvas canvas) {
++        if (metrics.fixedCount <= 0 || metrics.fixedWidth <= 0) {
++            return;
++        }
++        style.borderPaint.setStyle(Paint.Style.STROKE);
++        style.borderPaint.setColor(style.frozenDivider);
++        style.borderPaint.setStrokeWidth(1f);
++        canvas.drawLine(metrics.fixedWidth, 0, metrics.fixedWidth, getHeight(), style.borderPaint);
++    }
++
++    private void drawBox(Canvas canvas, int left, int top, int right, int bottom,
++                         int fill, int stroke, float strokeWidth) {
++        style.fillPaint.setStyle(Paint.Style.FILL);
++        style.fillPaint.setColor(fill);
++        canvas.drawRect(left, top, right, bottom, style.fillPaint);
++
++        if (strokeWidth > 0) {
++            style.borderPaint.setStyle(Paint.Style.STROKE);
++            style.borderPaint.setColor(stroke);
++            style.borderPaint.setStrokeWidth(strokeWidth);
++            float inset = strokeWidth / 2f;
++            canvas.drawRect(left + inset, top + inset, right - inset, bottom - inset,
++                    style.borderPaint);
++        }
++    }
++
++    private void drawCellText(Canvas canvas, String text, int left, int top, int right, int bottom,
++                              int color) {
++        if (TextUtils.isEmpty(text)) {
++            return;
++        }
++        Paint paint = style.textPaint;
++        paint.setColor(color);
++        Paint.FontMetrics fm = paint.getFontMetrics();
++        float cx = (left + right) / 2f;
++        float cy = (top + bottom) / 2f - (fm.ascent + fm.descent) / 2f;
++
++        canvas.save();
++        canvas.clipRect(left, top, right, bottom);
++        canvas.drawText(text, cx, cy, paint);
++        canvas.restore();
++    }
++
++    // ------------------------------------------------------------------
++
++    private static int dp(Context context, int value) {
++        return (int) (value * context.getResources().getDisplayMetrics().density + 0.5f);
++    }
++
++    private static int clamp(int value, int min, int max) {
++        if (value < min) {
++            return min;
++        }
++        return Math.min(value, max);
++    }
++}
+diff --git a/app/src/main/java/com/shrimpfarm/app/mixcalc/table/OnCellEditListener.java b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/OnCellEditListener.java
+new file mode 100644
+index 0000000..fcedb3a
+--- /dev/null
++++ b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/OnCellEditListener.java
+@@ -0,0 +1,17 @@
++package com.shrimpfarm.app.mixcalc.table;
++
++/**
++ * 编辑浮层回调。
++ */
++public interface OnCellEditListener {
++
++    /**
++     * 编辑提交：失焦、滚动导致格子在可见区之外、或点击其他格子时触发。
++     *
++     * @param text 提交时的原始文本（未 trim、未解析）
++     */
++    void onCellCommitted(int row, String columnId, String text);
++
++    /** 输入法"下一个"（IME_ACTION_NEXT），由宿主决定跳到哪个可编辑格。 */
++    void onEditNext(int row, String columnId);
++}
+diff --git a/app/src/main/java/com/shrimpfarm/app/mixcalc/table/OnCellTapListener.java b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/OnCellTapListener.java
+new file mode 100644
+index 0000000..8f4bd4f
+--- /dev/null
++++ b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/OnCellTapListener.java
+@@ -0,0 +1,26 @@
++package com.shrimpfarm.app.mixcalc.table;
++
++import android.graphics.Rect;
++
++/**
++ * 命中回调：单击 / 长按 表头、正文、表尾。
++ *
++ * <p>矩形参数用于给弹窗做锚点（列操作菜单、换料比例抽屉），坐标为表格视图内坐标。</p>
++ */
++public interface OnCellTapListener {
++
++    /** 正文单元格单击（可编辑格会先进入编辑，随后回调此方法）。 */
++    void onCellClick(int row, String columnId);
++
++    /** 正文单元格长按。 */
++    void onCellLongPress(int row, String columnId, Rect cellRect);
++
++    /** 表头单击（水列 → 水百分比弹窗；发酵料列 → 计算方式弹窗）。 */
++    void onHeaderClick(String columnId);
++
++    /** 表头长按（列操作菜单：固定 / 隐藏 / 全部显示 / 取消全部固定）。 */
++    void onHeaderLongPress(String columnId, Rect cellRect);
++
++    /** 表尾单击（序号列 / 棚号列 / 末列的按钮）。 */
++    void onFooterClick(String columnId);
++}
+diff --git a/app/src/main/java/com/shrimpfarm/app/mixcalc/table/TableColumn.java b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/TableColumn.java
+new file mode 100644
+index 0000000..fb381b7
+--- /dev/null
++++ b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/TableColumn.java
+@@ -0,0 +1,40 @@
++package com.shrimpfarm.app.mixcalc.table;
++
++import android.text.InputType;
++
++/**
++ * 列元数据：一条列的静态定义。
++ *
++ * <p>列名（表头文案）不放在这里，因为水列表头会带上当前水百分比、发酵料表头会随两个开关变化，
++ * 这类动态文案由 {@link CellTextProvider#getHeaderText(String)} 提供。</p>
++ */
++public class TableColumn {
++
++    /** 列 id，与业务约定一致，例如 "shed_number"。 */
++    public final String id;
++
++    /** 列宽（px）。 */
++    public final int widthPx;
++
++    /** 是否为可编辑列；可编辑列点击后进入编辑浮层。 */
++    public final boolean editable;
++
++    /** 正文文本颜色。 */
++    public final int textColor;
++
++    /** 编辑浮层使用的输入类型。 */
++    public final int inputType;
++
++    public TableColumn(String id, int widthPx, boolean editable, int textColor) {
++        this(id, widthPx, editable, textColor,
++                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
++    }
++
++    public TableColumn(String id, int widthPx, boolean editable, int textColor, int inputType) {
++        this.id = id;
++        this.widthPx = widthPx;
++        this.editable = editable;
++        this.textColor = textColor;
++        this.inputType = inputType;
++    }
++}
+diff --git a/app/src/main/java/com/shrimpfarm/app/mixcalc/table/TableColumnConfig.java b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/TableColumnConfig.java
+new file mode 100644
+index 0000000..829b5fe
+--- /dev/null
++++ b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/TableColumnConfig.java
+@@ -0,0 +1,90 @@
++package com.shrimpfarm.app.mixcalc.table;
++
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++
++/**
++ * 列的顺序、可见性与固定状态。
++ *
++ * <p>承接原有的 {@code columnIds} / {@code columnVisibility} / {@code columnFixed}。
++ * {@link #visual()} 给出绘制顺序：<b>固定列在前、非固定列在后，各自保持原始顺序</b>，
++ * 与原实现 {@code createFixedColumns} / {@code createScrollColumns} 的挑列方式一致。</p>
++ */
++public class TableColumnConfig {
++
++    private final List<TableColumn> columns = new ArrayList<>();
++    private final List<TableColumn> visual = new ArrayList<>();
++    private final Map<String, Boolean> visible = new HashMap<>();
++    private final Map<String, Boolean> fixed = new HashMap<>();
++
++    public TableColumnConfig(List<TableColumn> columns) {
++        if (columns != null) {
++            this.columns.addAll(columns);
++        }
++        for (TableColumn c : this.columns) {
++            visible.put(c.id, Boolean.TRUE);
++            fixed.put(c.id, Boolean.FALSE);
++        }
++        rebuildVisualOrder();
++    }
++
++    /** 原始顺序（= 原 columnIds 顺序）。 */
++    public List<TableColumn> columns() {
++        return columns;
++    }
++
++    /** 绘制顺序：固定列在前 + 非固定列在后。 */
++    public List<TableColumn> visual() {
++        return visual;
++    }
++
++    public void setVisible(String id, boolean value) {
++        visible.put(id, value);
++        rebuildVisualOrder();
++    }
++
++    public void setFixed(String id, boolean value) {
++        fixed.put(id, value);
++        rebuildVisualOrder();
++    }
++
++    public boolean isVisible(String id) {
++        Boolean b = visible.get(id);
++        return b == null || b;
++    }
++
++    public boolean isFixed(String id) {
++        Boolean b = fixed.get(id);
++        return b != null && b;
++    }
++
++    public int indexOf(String id) {
++        for (int i = 0; i < columns.size(); i++) {
++            if (columns.get(i).id.equals(id)) {
++                return i;
++            }
++        }
++        return -1;
++    }
++
++    public TableColumn get(String id) {
++        int i = indexOf(id);
++        return i < 0 ? null : columns.get(i);
++    }
++
++    public void rebuildVisualOrder() {
++        visual.clear();
++        for (TableColumn c : columns) {
++            if (isVisible(c.id) && isFixed(c.id)) {
++                visual.add(c);
++            }
++        }
++        for (TableColumn c : columns) {
++            if (isVisible(c.id) && !isFixed(c.id)) {
++                visual.add(c);
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/shrimpfarm/app/mixcalc/table/TableMetrics.java b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/TableMetrics.java
+new file mode 100644
+index 0000000..ef2c41a
+--- /dev/null
++++ b/app/src/main/java/com/shrimpfarm/app/mixcalc/table/TableMetrics.java
+@@ -0,0 +1,133 @@
++package com.shrimpfarm.app.mixcalc.table;
++
++import java.util.ArrayList;
++import java.util.List;
++
++/**
++ * 表格几何计算：列宽数组、前缀坐标、滚动范围、命中换算。
++ *
++ * <p>整张表只有一个坐标系：</p>
++ * <ul>
++ *   <li>固定列：x 不含横向偏移（冻结）</li>
++ *   <li>非固定列：x = 前缀坐标 - scrollX</li>
++ *   <li>表头/表尾：y 分别钉在 0 与视口底部（不随 scrollY 变化）</li>
++ *   <li>正文行：y = headerHeight + row * rowHeight - scrollY</li>
++ * </ul>
++ */
++public class TableMetrics {
++
++    public final List<TableColumn> visual = new ArrayList<>();
++
++    public int[] xBase = new int[0];
++    public int[] width = new int[0];
++
++    public int fixedCount;
++    public int fixedWidth;
++    public int scrollWidth;
++    public int totalWidth;
++
++    public int rowCount;
++    public int rowHeight;
++    public int headerHeight;
++    public int footerHeight;
++
++    public int viewWidth;
++    public int viewHeight;
++    public int bodyHeight;
++
++    public int maxScrollX;
++    public int maxScrollY;
++
++    public void rebuild(TableColumnConfig config, int rowCount, int viewWidth, int viewHeight,
++                        int rowHeight, int headerHeight, int footerHeight) {
++        visual.clear();
++        if (config != null) {
++            visual.addAll(config.visual());
++        }
++
++        this.rowCount = rowCount;
++        this.viewWidth = viewWidth;
++        this.viewHeight = viewHeight;
++        this.rowHeight = rowHeight;
++        this.headerHeight = headerHeight;
++        this.footerHeight = footerHeight;
++
++        int n = visual.size();
++        xBase = new int[n];
++        width = new int[n];
++
++        int acc = 0;
++        int fixedW = 0;
++        int scrollW = 0;
++        int fixedCnt = 0;
++        for (int i = 0; i < n; i++) {
++            TableColumn c = visual.get(i);
++            xBase[i] = acc;
++            width[i] = c.widthPx;
++            acc += c.widthPx;
++            if (config != null && config.isFixed(c.id)) {
++                fixedW += c.widthPx;
++                fixedCnt++;
++            } else {
++                scrollW += c.widthPx;
++            }
++        }
++        fixedCount = fixedCnt;
++        fixedWidth = fixedW;
++        scrollWidth = scrollW;
++        totalWidth = acc;
++
++        bodyHeight = Math.max(0, viewHeight - headerHeight - footerHeight);
++        int scrollViewport = Math.max(0, viewWidth - fixedWidth);
++        maxScrollX = Math.max(0, scrollWidth - scrollViewport);
++        maxScrollY = Math.max(0, rowCount * rowHeight - bodyHeight);
++    }
++
++    /** 视觉列 vi 的左边界 x（固定列冻结；非固定列已含横向偏移）。 */
++    public int xOf(int vi, int scrollX) {
++        return vi < fixedCount ? xBase[vi] : xBase[vi] - scrollX;
++    }
++
++    /** 行 row 的顶部 y（正文区，含纵向偏移）。 */
++    public int yOfRow(int row, int scrollY) {
++        return headerHeight + row * rowHeight - scrollY;
++    }
++
++    /** 正文区命中：返回行号，未命中返回 -1。 */
++    public int rowAt(float y, int scrollY) {
++        float bodyY = y - headerHeight + scrollY;
++        if (bodyY < 0) {
++            return -1;
++        }
++        int r = (int) (bodyY / rowHeight);
++        return (r >= 0 && r < rowCount) ? r : -1;
++    }
++
++    public int visualIndex(String id) {
++        for (int i = 0; i < visual.size(); i++) {
++            if (visual.get(i).id.equals(id)) {
++                return i;
++            }
++        }
++        return -1;
++    }
++
++    /** 命中换算：返回视觉列下标，未命中返回 -1。 */
++    public int visualIndexAt(float x, int scrollX) {
++        if (x < fixedWidth) {
++            for (int i = 0; i < fixedCount; i++) {
++                if (x >= xBase[i] && x < xBase[i] + width[i]) {
++                    return i;
++                }
++            }
++            return -1;
++        }
++        for (int i = fixedCount; i < visual.size(); i++) {
++            int cx = xBase[i] - scrollX;
++            if (x >= cx && x < cx + width[i]) {
++                return i;
++            }
++        }
++        return -1;
++    }
++}
+diff --git a/app/src/main/res/layout/activity_mix_calc.xml b/app/src/main/res/layout/activity_mix_calc.xml
+index 5af36c0..f1fcbf4 100644
+--- a/app/src/main/res/layout/activity_mix_calc.xml
++++ b/app/src/main/res/layout/activity_mix_calc.xml
+@@ -54,98 +54,12 @@
+             android:textColor="#FFFFFF" />
+     </LinearLayout>
+ 
+-    <!-- 表头区域 -->
+-    <LinearLayout
+-        android:id="@+id/header_container"
+-        android:layout_width="match_parent"
+-        android:layout_height="40dp"  
+-        android:orientation="horizontal"
+-        android:baselineAligned="false"
+-        android:background="#e8f5e9">
+-
+-        <!-- 固定列表头（左侧） -->
+-        <LinearLayout
+-            android:id="@+id/fixed_header_container"
+-            android:layout_width="wrap_content"
+-            android:layout_height="match_parent"
+-            android:orientation="horizontal"
+-            android:background="#e8f5e9">
+-            <!-- 序号列始终固定，已在XML中定义 -->
+-        </LinearLayout>
+-
+-        <!-- 可水平滚动的表头区域（右侧） -->
+-        <HorizontalScrollView
+-            android:id="@+id/header_scroll_view"
+-            android:layout_width="0dp"
+-            android:layout_height="match_parent"
+-            android:layout_weight="1"
+-            android:scrollbars="none"> <!-- 禁用滚动条 -->
+-
+-            <LinearLayout
+-                android:id="@+id/header_scroll_content"
+-                android:layout_width="wrap_content"
+-                android:layout_height="match_parent"
+-                android:orientation="horizontal">
+-                <!-- 非固定列的表头会动态添加 -->
+-            </LinearLayout>
+-        </HorizontalScrollView>
+-    </LinearLayout>
+-
+-    <!-- 数据区域 -->
+-    <ScrollView
+-        android:id="@+id/vertical_scroll_view"
++    <!-- 表格区域：表头 + 表体 + 表尾由同一个自绘 View 绘制 -->
++    <com.shrimpfarm.app.mixcalc.table.MixCalcTableView
++        android:id="@+id/mix_calc_table"
+         android:layout_width="match_parent"
+         android:layout_height="0dp"
+-        android:layout_weight="1"
+-        android:fillViewport="true"
+-        android:scrollbars="vertical">
+-
+-        <LinearLayout
+-            android:id="@+id/data_content"
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:orientation="vertical"
+-            android:minHeight="400dp">
+-            <!-- 数据行会动态添加，每行包含固定列和滚动列 -->
+-        </LinearLayout>
+-    </ScrollView>
+-
+-    <!-- 底部统计区域 -->
+-    <LinearLayout
+-        android:id="@+id/footer_container"
+-        android:layout_width="match_parent"
+-        android:layout_height="40dp"  
+-        android:orientation="horizontal"
+-        android:baselineAligned="false"
+-        android:background="#f0f0f0">
+-
+-        <!-- 固定列统计（左侧） -->
+-        <LinearLayout
+-            android:id="@+id/fixed_footer_container"
+-            android:layout_width="wrap_content"
+-            android:layout_height="match_parent"
+-            android:orientation="horizontal"
+-            android:background="#f0f0f0">
+-            <!-- 序号列统计动态添加 -->
+-        </LinearLayout>
+-
+-        <!-- 可水平滚动的统计区域（右侧） -->
+-        <HorizontalScrollView
+-            android:id="@+id/footer_scroll_view"
+-            android:layout_width="0dp"
+-            android:layout_height="match_parent"
+-            android:layout_weight="1"
+-            android:scrollbars="none"> <!-- 禁用滚动条 -->
+-
+-            <LinearLayout
+-                android:id="@+id/footer_scroll_content"
+-                android:layout_width="wrap_content"
+-                android:layout_height="match_parent"
+-                android:orientation="horizontal">
+-                <!-- 非固定列的统计会动态添加 -->
+-            </LinearLayout>
+-        </HorizontalScrollView>
+-    </LinearLayout>
++        android:layout_weight="1" />
+     <!-- 底部导航栏 -->
+     <LinearLayout
+         android:id="@+id/bottom_nav"
