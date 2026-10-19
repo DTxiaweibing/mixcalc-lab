@@ -349,12 +349,17 @@ public class MixCalcActivity extends BaseActivity {
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, wInsets) -> {
             final Insets bars = wInsets.getInsets(
                     WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            // 输入法弹出时底部让位取"导航栏 / 输入法"的较大者，
+            // 与原项目 MyApplication 给 android.R.id.content 加底 padding 的做法一致：
+            // 表格整体变矮 → 统计行跟着被推上来。
+            final Insets ime = wInsets.getInsets(WindowInsetsCompat.Type.ime());
+            final int bottomInset = Math.max(bars.bottom, ime.bottom);
             v.post(() -> {
                 int[] loc = new int[2];
                 v.getLocationInWindow(loc);
                 boolean systemAlreadyInset = loc[1] > 0;
                 setSpacerHeight(statusSpacer, systemAlreadyInset ? 0 : bars.top);
-                setSpacerHeight(navSpacer, systemAlreadyInset ? 0 : bars.bottom);
+                setSpacerHeight(navSpacer, systemAlreadyInset ? 0 : bottomInset);
             });
             return wInsets;
         });

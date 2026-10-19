@@ -158,11 +158,27 @@ class CellEditorOverlay {
         if (!editing || column == null) {
             return;
         }
-        if (!table.isCellVisible(row, column.id)) {
+        // 尺寸变化（典型是输入法弹出把表挤矮）时先尝试把该行滚回可视区，
+        // 实在留不住才收起 —— 避免"点低位格 → 键盘刚弹就自己收掉"。
+        if (!table.keepEditingCellVisible(row, column.id)) {
             end();
             return;
         }
         layoutChild();
+    }
+
+    /** 是否有浮层正在编辑（供表格决定要不要做冻结列裁剪）。 */
+    boolean isEditing() {
+        return editing && column != null;
+    }
+
+    /** 正在编辑的格是否落在固定列中（决定浮层裁剪到哪一侧）。 */
+    boolean isEditingFixedColumn() {
+        if (!editing || column == null) {
+            return false;
+        }
+        int vi = table.metrics().visualIndex(column.id);
+        return vi >= 0 && vi < table.metrics().fixedCount;
     }
 
     /** 依据命中格矩形摆放浮层（表格 onLayout 与滚动时都会调用）。 */
