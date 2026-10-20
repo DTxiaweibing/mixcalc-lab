@@ -36,6 +36,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.shrimpfarm.app.BaseActivity;
+import com.shrimpfarm.app.BuildConfig;
 import com.shrimpfarm.app.R;
 import com.shrimpfarm.app.mixcalc.model.FeedData;
 import com.shrimpfarm.app.mixcalc.table.CellStyle;
@@ -351,12 +352,13 @@ public class MixCalcActivity extends BaseActivity {
             loadAllDataInBackground();
             updateAllCalculations();
 
-            // 首次启动：隐私政策与使用协议同意弹窗（覆盖在主页上）
-            showPrivacyConsentIfNeeded();
-
         } catch (Exception e) {
             Log.e(TAG, "启动异常: " + e.getMessage(), e);
         }
+
+        // 首次启动：隐私政策与使用协议同意弹窗（覆盖在主页上）。
+        // 放在 try 外，主页初始化即使出错也要能弹出并完成同意/拒绝流程。
+        showPrivacyConsentIfNeeded();
     }
 
     /**
@@ -2174,6 +2176,11 @@ public class MixCalcActivity extends BaseActivity {
             if (isTabletMode) {
                 popupView.findViewById(R.id.menu_item_quick_settings).setVisibility(View.GONE);
                 popupView.findViewById(R.id.menu_divider_quick).setVisibility(View.GONE);
+                // 首项被隐藏后由隐私政策顶上：行高补回 40dp，分隔线才落在表格 40/80/120 网格上
+                View privacyItem = popupView.findViewById(R.id.menu_item_privacy_policy);
+                ViewGroup.LayoutParams lp = privacyItem.getLayoutParams();
+                lp.height = dpToPx(40);
+                privacyItem.setLayoutParams(lp);
             } else {
                 popupView.findViewById(R.id.menu_item_quick_settings).setOnClickListener(v -> {
                     popup.dismiss();
@@ -2194,26 +2201,33 @@ public class MixCalcActivity extends BaseActivity {
                 showHelpPanel();
             });
 
-            // 版本号：自动读取 versionName
+            // 版本号：取构建配置里的真实 versionName（app/build.gradle）
             TextView versionTv = popupView.findViewById(R.id.menu_item_version);
-            try {
-                String version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-                versionTv.setText(getString(R.string.mix_menu_version_format, version == null ? "" : version));
-            } catch (Exception e) {
-                Log.e(TAG, "读取版本号异常: " + e.getMessage());
-                versionTv.setText(getString(R.string.mix_menu_version_format, ""));
-            }
-
-            DisplayMetrics dm = getResources().getDisplayMetrics();
-            // 宽度：手机 1/3 屏宽，平板 1/4 屏宽
-            popup.setWidth(isTabletMode ? dm.widthPixels / 4 : dm.widthPixels / 3);
-            popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+            versionTv.setText(getString(R.string.mix_menu_version_format, BuildConfig.VERSION_NAME));
 
             View mainLayout = findViewById(R.id.main_layout);
             View titleBar = findViewById(R.id.title_bar);
-            if (mainLayout != null && titleBar != null) {
-                // 最高点 = 状态栏高度（spacer）+ 标题高度，即标题栏下沿；左边缘 x=0 与表格对齐
-                popup.showAtLocation(mainLayout, Gravity.NO_GRAVITY, 0, titleBar.getBottom());
+            View menuBtn = findViewById(R.id.btn_menu);
+
+            // 宽度：手机 1/3 屏宽，平板 1/4 屏宽（优先取主布局实际宽度，分屏下才准）
+            int totalWidth = mainLayout != null && mainLayout.getWidth() > 0
+                    ? mainLayout.getWidth()
+                    : getResources().getDisplayMetrics().widthPixels;
+            popup.setWidth(isTabletMode ? totalWidth / 4 : totalWidth / 3);
+            popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+
+            if (menuBtn != null && titleBar != null && mainLayout != null) {
+                // 屏幕坐标求差（与窗口是否内缩无关）：最高点贴标题栏下沿，左边缘与表格对齐
+                int[] btnLoc = new int[2];
+                int[] titleLoc = new int[2];
+                int[] mainLoc = new int[2];
+                menuBtn.getLocationOnScreen(btnLoc);
+                titleBar.getLocationOnScreen(titleLoc);
+                mainLayout.getLocationOnScreen(mainLoc);
+
+                int offsetY = (titleLoc[1] + titleBar.getHeight()) - (btnLoc[1] + menuBtn.getHeight());
+                int offsetX = mainLoc[0] - btnLoc[0];
+                popup.showAsDropDown(menuBtn, offsetX, offsetY);
             } else {
                 popup.showAtLocation(mainLayout, Gravity.NO_GRAVITY, 0, dpToPx(60));
             }

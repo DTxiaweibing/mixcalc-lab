@@ -3,7 +3,6 @@
     <string name="seq_stat_format">%1$d/%2$d</string>
     <string name="water_percentage_header">Water %d%%</string>
     <string name="title_mix_calculator">Mix Calculator</string>
-    <string name="menu_settings">Settings</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_ok">OK</string>
     <string name="mix_col_seq">NO.</string>
