@@ -6,22 +6,16 @@
     <title>使用帮助 - 养虾拌料计算器</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui, sans-serif;}
-        html,body {
-            height:100%;
-            overflow:hidden;
+        /* 让页面自然撑开，由整个 WebView 负责滚动 */
+        body{
+            background:#ffffff;color:#222;padding:16px;line-height:1.7;font-size:19px;
+            -webkit-overflow-scrolling: touch;
         }
-        body{background:#ffffff;color:#222;padding:16px;line-height:1.7;font-size:19px;}
         h1{font-size:26px;color:#2b8c40;margin-bottom:2px;text-align:center;}
         .subtitle{font-size:17px;color:#2b8c40;margin-bottom:16px;text-align:center;}
         .tip{background:#f0f8f2;padding:14px;border-radius:10px;margin-bottom:18px;}
         .container{
-            height:calc(100vh - 32px);height:calc(100dvh - 32px);
-            overflow-y:auto;-webkit-overflow-scrolling:touch;-webkit-overflow-scrolling:touch;
-            -ms-overflow-style:none;
-            scrollbar-width:none;
-        }
-        .container::-webkit-scrollbar{
-            display:none;
+            padding-bottom: 20px; /* 底部留白 */
         }
         .img-item{margin:20px 0;}
         img{max-width:100%;height:auto;border-radius:8px;display:block;margin:6px auto;}
@@ -47,25 +41,25 @@
 
     <div class="img-item">
         <img src="img2.jpg" alt="列操作菜单">
-        <p class="desc">列操作：可固定、隐藏表格列，按需调整表格显示，方便手机小屏幕查看。</p>
+        <p class="desc">列操作：长按表头行单元格可固定、隐藏表格列，按需调整表格显示，方便手机小屏幕查看。</p>
         <div class="caption">图2：列操作，支持固定、隐藏、显示表格列</div>
     </div>
 
     <div class="img-item">
         <img src="img3.jpg" alt="发酵料计算设置弹窗">
-        <p class="desc">发酵料设置：设置当前行发酵料是否参与算水、算料。</p>
+        <p class="desc">发酵料设置：点击表头行发酵料单元格查设置当前行发酵料是否参与算水、算料。</p>
         <div class="caption">图3：发酵料设置，可选择是否参与算水、算料</div>
     </div>
 
     <div class="img-item">
         <img src="img4.jpg" alt="选择水百分比">
-        <p class="desc">选择拌料含水率，根据拌料需求选择对应的加水比例。</p>
+        <p class="desc">点击表头行水分百分比单元格选择拌料含水率，根据拌料需求选择对应的加水比例。</p>
         <div class="caption">图4：拌料含水量选择（10%~40%）</div>
     </div>
 
     <div class="img-item">
         <img src="img5.jpg" alt="换料比例">
-        <p class="desc">设置换料过渡比例，用于虾料逐步替换时计算用量。</p>
+        <p class="desc">长按要填写换料数据的单元格设置换料过渡比例，用于虾料逐步替换时计算用量。</p>
         <div class="caption">图5：换料比例设置，按需选择百分比</div>
     </div>
 
@@ -78,33 +72,56 @@
 
 <script>
 (function(){
-    const box = document.getElementById('box');
     let timer = null;
-    const speed = 0.4; // 滚动速度，数值越大越快，0.4很慢适合阅读
+    let acc = 0;
+    const speed = 0.4; // 滚动速度，数值越大越快
+
+    // 直接使用 document.scrollingElement 控制整个网页滚动
+    function getScroller(){
+        return document.scrollingElement || document.documentElement;
+    }
 
     function startAutoScroll(){
-        timer = setInterval(()=>{
+        stopAutoScroll();
+        acc = 0;
+        timer = setInterval(function(){
+            const el = getScroller();
+            const max = el.scrollHeight - el.clientHeight;
+            
+            if (max <= 0) return; // 如果网页内容不足一屏，不滚动
+            
             // 滚到底部就回到顶部循环
-            if(box.scrollTop >= box.scrollHeight - box.clientHeight - 5){
-                box.scrollTop = 0;
-            }else{
-                box.scrollTop += speed;
+            if (el.scrollTop >= max - 5) {
+                window.scrollTo(0, 0);
+                acc = 0;
+                return;
+            }
+
+            // 累积小数，攒够 1px 再滚，兼容旧版 WebView
+            acc += speed;
+            const step = Math.floor(acc);
+            if (step > 0) {
+                acc -= step;
+                window.scrollBy(0, step); // 整个窗口滚动
             }
         }, 30);
     }
+
     function stopAutoScroll(){
-        clearInterval(timer);
-        timer = null;
+        if (timer !== null) {
+            clearInterval(timer);
+            timer = null;
+        }
     }
 
     // 手指触摸/点击 停止自动滚动
-    box.addEventListener('touchstart', stopAutoScroll);
-    box.addEventListener('mousedown', stopAutoScroll);
-
-    // 手指离开后，可选：延时恢复自动滚动（这里先不恢复，触摸一次就停）
-    // box.addEventListener('touchend', ()=>{ setTimeout(startAutoScroll,5000); });
+    document.body.addEventListener('touchstart', stopAutoScroll);
+    document.body.addEventListener('mousedown', stopAutoScroll);
 
     // 页面加载完启动自动滚动
+    document.addEventListener('DOMContentLoaded', function(){
+        setTimeout(startAutoScroll, 300);
+    });
     window.addEventListener('load', startAutoScroll);
 })();
 </script>
