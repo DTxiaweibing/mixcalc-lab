@@ -42,14 +42,6 @@ public class FeedData {
         this.isAverageManuallyModified = false;
     }
 
-    public void updateAllCalculations(int waterPercentage) {
-        updateAllCalculations(waterPercentage, false, false);
-    }
-    
-    public void updateAllCalculations(int waterPercentage, boolean fermentedIncludedInWater) {
-        updateAllCalculations(waterPercentage, fermentedIncludedInWater, false);
-    }
-
     public void setShedCount(double value) {
         setShedCount((int)value);
     }
@@ -543,56 +535,5 @@ public class FeedData {
 
     public void setShedCountManuallyModified(boolean manuallyModified) {
         this.isShedCountManuallyModified = manuallyModified;
-    }
-
-    public boolean isShedCountValid() {
-        return shedCount > 0;
-    }
-
-    public String getShedCountDisplay() {
-        return shedCount == 0 ? "" : String.valueOf(shedCount);
-    }
-
-    public String getAverageDisplay() {
-        return average == 0 ? "" : formatDisplayNumber(average);
-    }
-
-    public String getFermentedFeedDisplay() {
-        return fermentedFeed == 0 ? "" : formatDisplayNumber(fermentedFeed);
-    }
-
-    public String getPowderFeedDisplay() {
-        return powderFeed == 0 ? "" : formatDisplayNumber(powderFeed);
-    }
-
-    public String getFeed03Display() {
-        return feed03 == 0 ? "" : formatDisplayNumber(feed03);
-    }
-
-    public String getFeed05Display() {
-        return feed05 == 0 ? "" : formatDisplayNumber(feed05);
-    }
-
-    public String getFeed10Display() {
-        return feed10 == 0 ? "" : formatDisplayNumber(feed10);
-    }
-
-    public String getWaterDisplay() {
-        return water == 0 ? "" : formatDisplayNumber(water);
-    }
-
-    public String getWeighedFeedDisplay() {
-        if (weighedFeed == 0 || shedCount == 0) {
-            return "";
-        }
-        return formatDisplayNumber(weighedFeed) + "×" + shedCount;
-    }
-
-    private String formatDisplayNumber(double value) {
-        if (value == (int) value) {
-            return String.valueOf((int) value);
-        } else {
-            return String.format(java.util.Locale.ROOT, "%.2f", value);
-        }
     }
 }

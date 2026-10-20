@@ -108,4 +108,5 @@
     <string name="privacy_dialog_title">Privacy Policy and User Agreement</string>
     <string name="privacy_btn_disagree">Decline</string>
     <string name="privacy_btn_agree">Agree</string>
+    <string name="privacy_consent_load_fail">Failed to load the privacy policy and user agreement. Please reopen the app.</string>
 </resources>

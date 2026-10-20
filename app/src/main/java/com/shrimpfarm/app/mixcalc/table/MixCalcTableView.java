@@ -59,6 +59,15 @@ public class MixCalcTableView extends ViewGroup {
      */
     private static final int FLING_UNBOUNDED = 1 << 28;
 
+    /**
+     * OverScroller spline 常量。这套值与 Android 平台 {@code OverScroller} 的
+     * 内部实现（{@code SPLINE_POSITION}/{@code SCROLL_FRICTION}）保持一致，
+     * 仅用于反解「滑完剩余距离所需速度」。若后续系统改了 spline 实现，
+     * 这里的手感封顶可能失准——升级 targetSdk 时需复核。
+     */
+    private static final float SCROLL_FRICTION = ViewConfiguration.getScrollFriction();
+    private static final double DECELERATION_RATE = Math.log(0.78) / Math.log(0.9);
+
     private VelocityTracker velocityTracker;
     private int offsetX;
     private int offsetY;
@@ -410,10 +419,10 @@ public class MixCalcTableView extends ViewGroup {
         if (velocity == 0 || runwayPx <= 0) {
             return 0;
         }
-        float ref = ViewConfiguration.getScrollFriction()
+        float ref = SCROLL_FRICTION
                 * 9.80665f * 39.37f * 0.84f
                 * getResources().getDisplayMetrics().density * 160f;
-        double decelerationRate = Math.log(0.78) / Math.log(0.9);
+        double decelerationRate = DECELERATION_RATE;
         double limit = ref / 0.35 * Math.exp(Math.log(runwayPx / ref)
                 * (decelerationRate - 1.0) / decelerationRate);
         int capped = (int) Math.min(Math.abs((double) velocity), limit);

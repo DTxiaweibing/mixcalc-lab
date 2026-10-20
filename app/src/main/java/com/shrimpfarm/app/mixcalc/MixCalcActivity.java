@@ -10,7 +10,6 @@ import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.Handler;
 import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -70,7 +69,8 @@ public class MixCalcActivity extends BaseActivity {
     private static final String KEY_NEVER_SHOW_DOWNLOAD_DIALOG = "never_show_download_dialog";
     private static final String KEY_FERMENTED_INCLUDED_IN_WATER = "fermented_included_in_water";
     private static final String KEY_FERMENTED_INCLUDED_IN_AVERAGE = "fermented_included_in_average";
-    private static final String KEY_PRIVACY_AGREED = "privacy_agreed";
+    // 已同意的 versionCode：>= 当前版本才视为已同意（升级后需重新同意）
+    private static final String KEY_PRIVACY_AGREED = "privacy_agreed_version";
 
     // 视图组件
     private MixCalcTableView table;
@@ -349,7 +349,7 @@ public class MixCalcActivity extends BaseActivity {
             table.setRows(dataList);
 
             // 加载已保存数据并计算
-            loadAllDataInBackground();
+            loadSavedData();
             updateAllCalculations();
 
         } catch (Exception e) {
@@ -443,8 +443,8 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 在后台加载数据
-    private void loadAllDataInBackground() {
+    // 从 SharedPreferences 同步加载已保存数据（数据量小，主线程解析）
+    private void loadSavedData() {
         try {
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
             String dataJson = prefs.getString(KEY_SAVED_DATA, null);
@@ -748,20 +748,6 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     // ==================== 生命周期 ====================
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        saveAllData();
-        saveGlobalWaterPercentage();
-        saveFermentedIncludedInWater();
-        saveFermentedIncludedInAverage();
-    }
 
     @Override
     protected void onPause() {
@@ -1178,9 +1164,11 @@ public class MixCalcActivity extends BaseActivity {
 
     private int getScreenWidth() {
         try {
-            DisplayMetrics displayMetrics = new DisplayMetrics();
-            getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
-            return displayMetrics.widthPixels;
+            View mainLayout = findViewById(R.id.main_layout);
+            if (mainLayout != null && mainLayout.getWidth() > 0) {
+                return mainLayout.getWidth();
+            }
+            return getResources().getDisplayMetrics().widthPixels;
         } catch (Exception e) {
             Log.e(TAG, "获取屏幕宽度异常: " + e.getMessage());
             return 1080;
@@ -2205,32 +2193,15 @@ public class MixCalcActivity extends BaseActivity {
             TextView versionTv = popupView.findViewById(R.id.menu_item_version);
             versionTv.setText(getString(R.string.mix_menu_version_format, BuildConfig.VERSION_NAME));
 
-            View mainLayout = findViewById(R.id.main_layout);
-            View titleBar = findViewById(R.id.title_bar);
-            View menuBtn = findViewById(R.id.btn_menu);
-
             // 宽度：手机 1/3 屏宽，平板 1/4 屏宽（优先取主布局实际宽度，分屏下才准）
+            View mainLayout = findViewById(R.id.main_layout);
             int totalWidth = mainLayout != null && mainLayout.getWidth() > 0
                     ? mainLayout.getWidth()
                     : getResources().getDisplayMetrics().widthPixels;
             popup.setWidth(isTabletMode ? totalWidth / 4 : totalWidth / 3);
             popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
 
-            if (menuBtn != null && titleBar != null && mainLayout != null) {
-                // 屏幕坐标求差（与窗口是否内缩无关）：最高点贴标题栏下沿，左边缘与表格对齐
-                int[] btnLoc = new int[2];
-                int[] titleLoc = new int[2];
-                int[] mainLoc = new int[2];
-                menuBtn.getLocationOnScreen(btnLoc);
-                titleBar.getLocationOnScreen(titleLoc);
-                mainLayout.getLocationOnScreen(mainLoc);
-
-                int offsetY = (titleLoc[1] + titleBar.getHeight()) - (btnLoc[1] + menuBtn.getHeight());
-                int offsetX = mainLoc[0] - btnLoc[0];
-                popup.showAsDropDown(menuBtn, offsetX, offsetY);
-            } else {
-                popup.showAtLocation(mainLayout, Gravity.NO_GRAVITY, 0, dpToPx(60));
-            }
+            showPopupUnderTitleBar(popup);
         } catch (Exception e) {
             Log.e(TAG, "显示主菜单异常: " + e.getMessage());
         }
@@ -2238,20 +2209,33 @@ public class MixCalcActivity extends BaseActivity {
 
     // ==================== 首次启动隐私同意弹窗 ====================
 
-    /** 未同意过隐私政策与使用协议时，弹出同意弹窗覆盖在主页上；拒绝则退出应用。 */
+    /**
+     * 未同意过隐私政策与使用协议时，弹出同意弹窗覆盖在主页上；拒绝则退出应用。
+     *
+     * <p>“已同意”按版本记录（{@link #KEY_PRIVACY_AGREED} 存当前 versionCode）：
+     * 应用升级后需重新同意，避免老用户升级直接跳过。</p>
+     */
     private void showPrivacyConsentIfNeeded() {
+        final SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        if (prefs.getInt(KEY_PRIVACY_AGREED, 0) >= BuildConfig.VERSION_CODE) {
+            return;
+        }
+
+        // 读取弹窗文案；失败时不弹同意框（不能拿空文案完成授权），提示后退出
+        String[] lines = readAssetLines("隐私政策与使用协议弹窗.txt");
+        if (lines.length < 5) {
+            Log.e(TAG, "隐私弹窗文案缺失/损坏，行数=" + lines.length);
+            Toast.makeText(this, getString(R.string.privacy_consent_load_fail), Toast.LENGTH_LONG).show();
+            finishAndRemoveTask();
+            return;
+        }
+
+        String title = lines[0];
+        String body = lines[1] + "\n\n" + lines[2];
+        String linkUser = lines[3];
+        String linkPrivacy = lines[4];
+
         try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            if (prefs.getBoolean(KEY_PRIVACY_AGREED, false)) {
-                return;
-            }
-
-            String[] lines = readAssetLines("隐私政策与使用协议弹窗.txt");
-            String title = lines.length > 0 ? lines[0] : getString(R.string.privacy_dialog_title);
-            String body = lines.length > 2 ? lines[1] + "\n\n" + lines[2] : "";
-            String linkUser = lines.length > 3 ? lines[3] : getString(R.string.mix_menu_user_agreement);
-            String linkPrivacy = lines.length > 4 ? lines[4] : getString(R.string.mix_menu_privacy_policy);
-
             final Dialog dialog = new Dialog(this);
             View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_simple_confirm, null);
             dialog.setContentView(dialogView);
@@ -2261,24 +2245,30 @@ public class MixCalcActivity extends BaseActivity {
             tvTitle.setText(title);
 
             TextView tvMessage = dialogView.findViewById(R.id.tv_message);
+            // 链接区在正文之后；正文里可能也出现"用户协议"字样，故从正文末尾开始查找，
+            // 避免把 span 套到正文上（那样末尾的链接就点不动）。
             String linkText = linkUser + "　" + linkPrivacy;
-            SpannableString span = new SpannableString(body + "\n\n" + linkText);
-            int userStart = body.length() + 2;
-            int userEnd = userStart + linkUser.length();
-            int privacyStart = userEnd + 1;
-            int privacyEnd = privacyStart + linkPrivacy.length();
-            span.setSpan(new ClickableSpan() {
-                @Override
-                public void onClick(View widget) {
-                    openAssetPage("user.html");
-                }
-            }, userStart, userEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            span.setSpan(new ClickableSpan() {
-                @Override
-                public void onClick(View widget) {
-                    openAssetPage("privacy.html");
-                }
-            }, privacyStart, privacyEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            String fullText = body + "\n\n" + linkText;
+            SpannableString span = new SpannableString(fullText);
+            int linkAreaStart = body.length() + 2;
+            int userStart = fullText.indexOf(linkUser, linkAreaStart);
+            int privacyStart = fullText.indexOf(linkPrivacy, linkAreaStart);
+            if (userStart >= 0) {
+                span.setSpan(new ClickableSpan() {
+                    @Override
+                    public void onClick(View widget) {
+                        openAssetPage("user.html");
+                    }
+                }, userStart, userStart + linkUser.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (privacyStart >= 0) {
+                span.setSpan(new ClickableSpan() {
+                    @Override
+                    public void onClick(View widget) {
+                        openAssetPage("privacy.html");
+                    }
+                }, privacyStart, privacyStart + linkPrivacy.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
             tvMessage.setMovementMethod(LinkMovementMethod.getInstance());
             tvMessage.setText(span);
 
@@ -2291,7 +2281,7 @@ public class MixCalcActivity extends BaseActivity {
             buttonLayout.addView(divider);
             addConsentButton(dialog, buttonLayout, getString(R.string.privacy_btn_agree), 0xFF2D8C42,
                     (d, w) -> {
-                        prefs.edit().putBoolean(KEY_PRIVACY_AGREED, true).apply();
+                        prefs.edit().putInt(KEY_PRIVACY_AGREED, BuildConfig.VERSION_CODE).apply();
                         d.dismiss();
                     });
 
@@ -2300,7 +2290,10 @@ public class MixCalcActivity extends BaseActivity {
             dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
             dialog.show();
         } catch (Exception e) {
-            Log.e(TAG, "显示隐私同意弹窗异常: " + e.getMessage());
+            // 弹窗构造失败：不能静默放行，明确提示并退出，等待用户重试
+            Log.e(TAG, "显示隐私同意弹窗异常: " + e.getMessage(), e);
+            Toast.makeText(this, getString(R.string.privacy_consent_load_fail), Toast.LENGTH_LONG).show();
+            finishAndRemoveTask();
         }
     }
 
@@ -2447,13 +2440,11 @@ public class MixCalcActivity extends BaseActivity {
             popupView.findViewById(R.id.btn_cancel_all).setOnClickListener(v -> popup.dismiss());
             popupView.findViewById(R.id.btn_unfix_all).setOnClickListener(v -> {
                 unfixAllColumns();
-                popup.dismiss();
-                new Handler().postDelayed(() -> showColumnSettingsPopup(), 200);
+                reopenColumnSettings(popup);
             });
             popupView.findViewById(R.id.btn_show_all).setOnClickListener(v -> {
                 showAllColumns();
-                popup.dismiss();
-                new Handler().postDelayed(() -> showColumnSettingsPopup(), 200);
+                reopenColumnSettings(popup);
             });
             popupView.findViewById(R.id.btn_confirm).setOnClickListener(v -> {
                 saveColumnVisibility();
@@ -2463,11 +2454,44 @@ public class MixCalcActivity extends BaseActivity {
                 Toast.makeText(this, getString(R.string.mix_toast_column_saved), Toast.LENGTH_SHORT).show();
             });
 
-            View anchor = findViewById(R.id.btn_menu);
-            popup.showAsDropDown(anchor, 0, 0);
+            showPopupUnderTitleBar(popup);
 
         } catch (Exception e) {
             Log.e(TAG, "showColumnSettingsPopup: " + e.getMessage(), e);
+        }
+    }
+
+    /** 关闭后重开列设置弹窗：用 OnDismissListener 链式重开，避免 200ms 延迟叠加出两个弹窗。 */
+    private void reopenColumnSettings(PopupWindow popup) {
+        popup.setOnDismissListener(() -> {
+            columnSettingsPopup = null;
+            if (!isFinishing() && !isDestroyed()) {
+                showColumnSettingsPopup();
+            }
+        });
+        popup.dismiss();
+    }
+
+    /**
+     * 把弹窗最高点贴到标题栏下沿、左边缘与表格对齐。手机/平板通用：
+     * 用屏幕坐标求差，避免 showAtLocation 的 y 相对 main_layout 而在平板被系统栏内缩时少算偏移。
+     */
+    private void showPopupUnderTitleBar(PopupWindow popup) {
+        View menuBtn = findViewById(R.id.btn_menu);
+        View titleBar = findViewById(R.id.title_bar);
+        View mainLayout = findViewById(R.id.main_layout);
+        if (menuBtn != null && titleBar != null && mainLayout != null) {
+            int[] btnLoc = new int[2];
+            int[] titleLoc = new int[2];
+            int[] mainLoc = new int[2];
+            menuBtn.getLocationOnScreen(btnLoc);
+            titleBar.getLocationOnScreen(titleLoc);
+            mainLayout.getLocationOnScreen(mainLoc);
+            int offsetY = (titleLoc[1] + titleBar.getHeight()) - (btnLoc[1] + menuBtn.getHeight());
+            int offsetX = mainLoc[0] - btnLoc[0];
+            popup.showAsDropDown(menuBtn, offsetX, offsetY);
+        } else {
+            popup.showAtLocation(mainLayout, Gravity.NO_GRAVITY, 0, dpToPx(60));
         }
     }
 
