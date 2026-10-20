@@ -312,6 +312,8 @@ public class MixCalcActivity extends BaseActivity {
 
         try {
             setContentView(R.layout.activity_mix_calc);
+            // 键盘弹起时把布局往上顶，让底部统计行跟着键盘上移
+            getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
             // ---------- 系统栏留白（状态栏深绿 / 底部导航栏白），由 WindowInsets 驱动 ----------
             setupSystemBarInsets();
