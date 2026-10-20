@@ -38,6 +38,8 @@ class CellEditorOverlay {
     private boolean editing;
     /** 程序化设置文本期间抑制回调，避免"打开即提交"。 */
     private boolean suppress;
+    /** 用户是否真正改过文本：只点一下获得焦点就离开时不应提交。 */
+    private boolean dirty;
 
     CellEditorOverlay(MixCalcTableView table) {
         this.table = table;
@@ -67,6 +69,7 @@ class CellEditorOverlay {
                 if (suppress || !editing || column == null) {
                     return;
                 }
+                dirty = true;
                 OnCellEditListener listener = table.editListener();
                 if (listener != null) {
                     listener.onCellCommitted(row, column.id, s.toString());
@@ -120,6 +123,7 @@ class CellEditorOverlay {
         } finally {
             suppress = false;
         }
+        dirty = false;
 
         if (editText.getVisibility() != View.VISIBLE) {
             editText.setVisibility(View.VISIBLE);
@@ -203,10 +207,14 @@ class CellEditorOverlay {
     }
 
     private void commitInternal() {
+        if (!dirty) {
+            return;
+        }
         OnCellEditListener listener = table.editListener();
         if (listener == null || column == null || row < 0) {
             return;
         }
+        dirty = false;
         listener.onCellCommitted(row, column.id, editText.getText().toString());
     }
 

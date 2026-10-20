@@ -83,6 +83,10 @@ public class MixCalcActivity extends BaseActivity {
     private int editBeginRow = -1;
     private String editBeginColumn;
     private double editBeginValue;
+    // 棚数格的进入编辑快照：净结果没变时要还原，不能留下“手动修改”标记
+    private int editBeginShedCount;
+    private int editBeginShedBase;
+    private boolean editBeginShedManual;
 
     // 列管理
     private final Map<String, Boolean> columnVisibility = new HashMap<String, Boolean>();
@@ -286,6 +290,9 @@ public class MixCalcActivity extends BaseActivity {
             editBeginRow = row;
             editBeginColumn = columnId;
             editBeginValue = data == null ? 0 : getFeedValueByColumn(data, columnId);
+            editBeginShedCount = data == null ? 0 : data.getShedCount();
+            editBeginShedBase = data == null ? 0 : data.getShedCountBase();
+            editBeginShedManual = data != null && data.isShedCountManuallyModified();
         }
 
         @Override
@@ -315,13 +322,15 @@ public class MixCalcActivity extends BaseActivity {
             initViews();
             initColumnNames();
             loadQuickSettings();
-            initTabletAdaptiveSettings();
 
             // 列可见 / 固定状态
             initColumnVisibility();
             initColumnFixedState();
             loadColumnVisibility();
             loadColumnFixedState();
+
+            // 平板自适应（放在列可见性之后：按真实可见列铺满屏幕宽度）
+            initTabletAdaptiveSettings();
 
             // 装配自绘引擎
             initData();
@@ -406,6 +415,11 @@ public class MixCalcActivity extends BaseActivity {
 
     private boolean isTabletDevice(Context context) {
         try {
+            // 以 Android 标准的「最小宽度 ≥ 600dp」为主：部分平板 xdpi/ydpi 上报不准，
+            // 只靠物理对角线会把平板误判成手机，导致本该铺满的列被横向滚动截断。
+            if (context.getResources().getConfiguration().smallestScreenWidthDp >= 600) {
+                return true;
+            }
             DisplayMetrics displayMetrics = context.getResources().getDisplayMetrics();
             float widthInches = displayMetrics.widthPixels / displayMetrics.xdpi;
             float heightInches = displayMetrics.heightPixels / displayMetrics.ydpi;
@@ -497,11 +511,20 @@ public class MixCalcActivity extends BaseActivity {
                         newValue = 0;
                     }
                 }
-                data.setShedCount((int) newValue);
-                data.setShedCountManuallyModified(!(newValue == 0 || value.isEmpty()));
-                if (row == FIRST_ROW) {
-                    // 第 1 行手改：改后的值就是新基数，其后仍继续扣后面各行
-                    data.setShedCountBase((int) newValue);
+                int newCount = (int) newValue;
+                boolean sameCell = row == editBeginRow && columnId.equals(editBeginColumn);
+                int originCount = sameCell ? editBeginShedCount : data.getShedCount();
+                if (newCount != originCount) {
+                    data.setShedCount(newCount);
+                    data.setShedCountManuallyModified(!(newCount == 0 || value.isEmpty()));
+                    if (row == FIRST_ROW) {
+                        // 第 1 行手改：改后的值就是新基数，其后仍继续扣后面各行
+                        data.setShedCountBase(newCount);
+                    }
+                } else if (sameCell) {
+                    // 净结果没变（只是获得焦点 / 输入后又改回原值）：还原快照，不算手动修改
+                    data.setShedCountManuallyModified(editBeginShedManual);
+                    data.setShedCountBase(editBeginShedBase);
                 }
                 break;
             }
@@ -1280,7 +1303,9 @@ public class MixCalcActivity extends BaseActivity {
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
             for (int i = 1; i < columnIds.length; i++) {
                 String columnId = columnIds[i];
-                boolean visible = prefs.getBoolean(KEY_COLUMN_VISIBILITY + columnId, true);
+                // 平板：一律显示全部列（无齿轮入口，隐藏状态在平板上没有意义）
+                boolean visible = isTabletDevice(this)
+                        || prefs.getBoolean(KEY_COLUMN_VISIBILITY + columnId, true);
                 columnVisibility.put(columnId, visible);
             }
         } catch (Exception e) {
