@@ -100,4 +100,13 @@
     <string name="col_settings_confirm_all">Confirm</string>
     <string name="mix_switch_ratio_title">Mixing Ratio</string>
     <string name="mix_switch_checked">✓</string>
+    <string name="mix_menu_open">Open menu</string>
+    <string name="mix_menu_quick_settings">Quick Settings</string>
+    <string name="mix_menu_privacy_policy">Privacy Policy</string>
+    <string name="mix_menu_user_agreement">User Agreement</string>
+    <string name="mix_menu_help">Help</string>
+    <string name="mix_menu_version_format">Version: v%1$s</string>
+    <string name="privacy_dialog_title">Privacy Policy and User Agreement</string>
+    <string name="privacy_btn_disagree">Decline</string>
+    <string name="privacy_btn_agree">Agree</string>
 </resources>

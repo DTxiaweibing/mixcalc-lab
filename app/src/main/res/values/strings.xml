@@ -103,4 +103,13 @@
     <string name="mix_switch_ratio_title">换料比例</string>
     <string name="mix_switch_checked">✓</string>
     <string name="mix_btn_help">帮助</string>
+    <string name="mix_menu_open">打开菜单</string>
+    <string name="mix_menu_quick_settings">快捷设置</string>
+    <string name="mix_menu_privacy_policy">隐私政策</string>
+    <string name="mix_menu_user_agreement">用户协议</string>
+    <string name="mix_menu_help">使用帮助</string>
+    <string name="mix_menu_version_format">版本:v%1$s</string>
+    <string name="privacy_dialog_title">隐私政策与使用协议</string>
+    <string name="privacy_btn_disagree">拒绝</string>
+    <string name="privacy_btn_agree">同意</string>
 </resources>

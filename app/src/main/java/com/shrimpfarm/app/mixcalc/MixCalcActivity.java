@@ -12,6 +12,10 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.text.InputType;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.method.LinkMovementMethod;
+import android.text.style.ClickableSpan;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
@@ -65,6 +69,7 @@ public class MixCalcActivity extends BaseActivity {
     private static final String KEY_NEVER_SHOW_DOWNLOAD_DIALOG = "never_show_download_dialog";
     private static final String KEY_FERMENTED_INCLUDED_IN_WATER = "fermented_included_in_water";
     private static final String KEY_FERMENTED_INCLUDED_IN_AVERAGE = "fermented_included_in_average";
+    private static final String KEY_PRIVACY_AGREED = "privacy_agreed";
 
     // 视图组件
     private MixCalcTableView table;
@@ -345,6 +350,9 @@ public class MixCalcActivity extends BaseActivity {
             // 加载已保存数据并计算
             loadAllDataInBackground();
             updateAllCalculations();
+
+            // 首次启动：隐私政策与使用协议同意弹窗（覆盖在主页上）
+            showPrivacyConsentIfNeeded();
 
         } catch (Exception e) {
             Log.e(TAG, "启动异常: " + e.getMessage(), e);
@@ -1184,19 +1192,9 @@ public class MixCalcActivity extends BaseActivity {
             table = findViewById(R.id.mix_calc_table);
             tvErrorDisplay = findViewById(R.id.tv_error_display);
 
-            // 列设置齿轮按钮（平板模式下隐藏）
-            View settingsBtn = findViewById(R.id.btn_column_settings);
-            if (isTabletDevice(this)) {
-                settingsBtn.setVisibility(View.GONE);
-            } else {
-                settingsBtn.setOnClickListener(v -> {
-                    if (columnSettingsPopup != null && columnSettingsPopup.isShowing()) {
-                        columnSettingsPopup.dismiss();
-                    } else {
-                        showColumnSettingsPopup();
-                    }
-                });
-            }
+            // 菜单按钮（下拉：快捷设置 / 隐私政策 / 用户协议 / 使用帮助）
+            View menuBtn = findViewById(R.id.btn_menu);
+            menuBtn.setOnClickListener(v -> showMainMenu());
         } catch (Exception e) {
             Log.e(TAG, "initViews异常: " + e.getMessage());
         }
@@ -2146,12 +2144,192 @@ public class MixCalcActivity extends BaseActivity {
 
     // 帮助入口：直接打开 assets/help 下的 HTML 使用帮助页
     private void showHelpPanel() {
+        openAssetPage("help/index.html");
+    }
+
+    /** 打开 assets 下的静态页（隐私政策 / 用户协议 / 使用帮助）。 */
+    private void openAssetPage(String assetPath) {
         try {
             Intent intent = new Intent(this, com.shrimpfarm.app.AssetWebViewActivity.class);
-            intent.putExtra(com.shrimpfarm.app.AssetWebViewActivity.EXTRA_ASSET_PATH, "help/index.html");
+            intent.putExtra(com.shrimpfarm.app.AssetWebViewActivity.EXTRA_ASSET_PATH, assetPath);
             startActivity(intent);
         } catch (Exception e) {
-            Log.e(TAG, "打开帮助页异常: " + e.getMessage());
+            Log.e(TAG, "打开页面异常: " + e.getMessage());
+        }
+    }
+
+    // ==================== 主菜单下拉（快捷设置 / 隐私政策 / 用户协议 / 使用帮助） ====================
+
+    private void showMainMenu() {
+        try {
+            View popupView = getLayoutInflater().inflate(R.layout.popup_main_menu, null);
+
+            final PopupWindow popup = new PopupWindow(popupView);
+            popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            popup.setOutsideTouchable(true);
+            popup.setFocusable(true);
+            popup.setElevation(10);
+
+            // 快捷设置：平板不显示
+            if (isTabletMode) {
+                popupView.findViewById(R.id.menu_item_quick_settings).setVisibility(View.GONE);
+                popupView.findViewById(R.id.menu_divider_quick).setVisibility(View.GONE);
+            } else {
+                popupView.findViewById(R.id.menu_item_quick_settings).setOnClickListener(v -> {
+                    popup.dismiss();
+                    showColumnSettingsPopup();
+                });
+            }
+
+            popupView.findViewById(R.id.menu_item_privacy_policy).setOnClickListener(v -> {
+                popup.dismiss();
+                openAssetPage("privacy.html");
+            });
+            popupView.findViewById(R.id.menu_item_user_agreement).setOnClickListener(v -> {
+                popup.dismiss();
+                openAssetPage("user.html");
+            });
+            popupView.findViewById(R.id.menu_item_help).setOnClickListener(v -> {
+                popup.dismiss();
+                showHelpPanel();
+            });
+
+            // 版本号：自动读取 versionName
+            TextView versionTv = popupView.findViewById(R.id.menu_item_version);
+            try {
+                String version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+                versionTv.setText(getString(R.string.mix_menu_version_format, version == null ? "" : version));
+            } catch (Exception e) {
+                Log.e(TAG, "读取版本号异常: " + e.getMessage());
+                versionTv.setText(getString(R.string.mix_menu_version_format, ""));
+            }
+
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            // 宽度：手机 1/3 屏宽，平板 1/4 屏宽
+            popup.setWidth(isTabletMode ? dm.widthPixels / 4 : dm.widthPixels / 3);
+            popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+
+            View mainLayout = findViewById(R.id.main_layout);
+            View titleBar = findViewById(R.id.title_bar);
+            if (mainLayout != null && titleBar != null) {
+                // 最高点 = 状态栏高度（spacer）+ 标题高度，即标题栏下沿；左边缘 x=0 与表格对齐
+                popup.showAtLocation(mainLayout, Gravity.NO_GRAVITY, 0, titleBar.getBottom());
+            } else {
+                popup.showAtLocation(mainLayout, Gravity.NO_GRAVITY, 0, dpToPx(60));
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "显示主菜单异常: " + e.getMessage());
+        }
+    }
+
+    // ==================== 首次启动隐私同意弹窗 ====================
+
+    /** 未同意过隐私政策与使用协议时，弹出同意弹窗覆盖在主页上；拒绝则退出应用。 */
+    private void showPrivacyConsentIfNeeded() {
+        try {
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            if (prefs.getBoolean(KEY_PRIVACY_AGREED, false)) {
+                return;
+            }
+
+            String[] lines = readAssetLines("隐私政策与使用协议弹窗.txt");
+            String title = lines.length > 0 ? lines[0] : getString(R.string.privacy_dialog_title);
+            String body = lines.length > 2 ? lines[1] + "\n\n" + lines[2] : "";
+            String linkUser = lines.length > 3 ? lines[3] : getString(R.string.mix_menu_user_agreement);
+            String linkPrivacy = lines.length > 4 ? lines[4] : getString(R.string.mix_menu_privacy_policy);
+
+            final Dialog dialog = new Dialog(this);
+            View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_simple_confirm, null);
+            dialog.setContentView(dialogView);
+            dialog.setCancelable(false);
+
+            TextView tvTitle = dialogView.findViewById(R.id.tv_title);
+            tvTitle.setText(title);
+
+            TextView tvMessage = dialogView.findViewById(R.id.tv_message);
+            String linkText = linkUser + "　" + linkPrivacy;
+            SpannableString span = new SpannableString(body + "\n\n" + linkText);
+            int userStart = body.length() + 2;
+            int userEnd = userStart + linkUser.length();
+            int privacyStart = userEnd + 1;
+            int privacyEnd = privacyStart + linkPrivacy.length();
+            span.setSpan(new ClickableSpan() {
+                @Override
+                public void onClick(View widget) {
+                    openAssetPage("user.html");
+                }
+            }, userStart, userEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            span.setSpan(new ClickableSpan() {
+                @Override
+                public void onClick(View widget) {
+                    openAssetPage("privacy.html");
+                }
+            }, privacyStart, privacyEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            tvMessage.setMovementMethod(LinkMovementMethod.getInstance());
+            tvMessage.setText(span);
+
+            LinearLayout buttonLayout = dialogView.findViewById(R.id.layout_buttons);
+            addConsentButton(dialog, buttonLayout, getString(R.string.privacy_btn_disagree), 0xFFD32F2F,
+                    (d, w) -> finishAndRemoveTask());
+            View divider = new View(this);
+            divider.setLayoutParams(new LinearLayout.LayoutParams(1, ViewGroup.LayoutParams.MATCH_PARENT));
+            divider.setBackgroundColor(0xFFE0E0E0);
+            buttonLayout.addView(divider);
+            addConsentButton(dialog, buttonLayout, getString(R.string.privacy_btn_agree), 0xFF2D8C42,
+                    (d, w) -> {
+                        prefs.edit().putBoolean(KEY_PRIVACY_AGREED, true).apply();
+                        d.dismiss();
+                    });
+
+            int screenWidth = getResources().getDisplayMetrics().widthPixels;
+            dialog.getWindow().setLayout((int) (screenWidth * 0.85), ViewGroup.LayoutParams.WRAP_CONTENT);
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            dialog.show();
+        } catch (Exception e) {
+            Log.e(TAG, "显示隐私同意弹窗异常: " + e.getMessage());
+        }
+    }
+
+    private void addConsentButton(Dialog dialog, LinearLayout buttonLayout, String text, int color,
+                                  DialogInterface.OnClickListener listener) {
+        Button btn = new Button(this);
+        btn.setText(text);
+        btn.setTextSize(15);
+        btn.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
+        btn.setTextColor(color);
+        btn.setBackgroundResource(android.R.color.transparent);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        btn.setOnClickListener(v -> {
+            if (listener != null) {
+                listener.onClick(dialog, 0);
+            }
+        });
+        buttonLayout.addView(btn, lp);
+    }
+
+    /** 逐行读取 assets 下的文本文件（UTF-8）。 */
+    private String[] readAssetLines(String fileName) {
+        java.io.BufferedReader reader = null;
+        try {
+            reader = new java.io.BufferedReader(new java.io.InputStreamReader(
+                    getAssets().open(fileName), java.nio.charset.StandardCharsets.UTF_8));
+            List<String> lines = new ArrayList<>();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lines.add(line);
+            }
+            return lines.toArray(new String[0]);
+        } catch (Exception e) {
+            Log.e(TAG, "读取资产文件异常: " + e.getMessage());
+            return new String[0];
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (Exception ignored) {
+                }
+            }
         }
     }
 
@@ -2271,7 +2449,7 @@ public class MixCalcActivity extends BaseActivity {
                 Toast.makeText(this, getString(R.string.mix_toast_column_saved), Toast.LENGTH_SHORT).show();
             });
 
-            View anchor = findViewById(R.id.btn_column_settings);
+            View anchor = findViewById(R.id.btn_menu);
             popup.showAsDropDown(anchor, 0, 0);
 
         } catch (Exception e) {

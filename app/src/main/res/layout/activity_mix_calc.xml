@@ -15,6 +15,7 @@
 
     <!-- 顶部标题 - 左20%空白 + 中60%标题 + 右20%误差 -->
     <LinearLayout
+        android:id="@+id/title_bar"
         android:layout_width="match_parent"
         android:layout_height="@dimen/title_height"
         android:orientation="horizontal"
@@ -28,15 +29,15 @@
             android:paddingStart="8dp">
 
             <ImageView
-                android:id="@+id/btn_column_settings"
+                android:id="@+id/btn_menu"
                 android:layout_width="26dp"
                 android:layout_height="26dp"
                 android:layout_gravity="center_vertical"
-                android:src="@drawable/ic_settings"
+                android:src="@drawable/ic_menu"
                 android:tint="#FFFFFF"
                 android:scaleType="fitCenter"
                 android:background="@null"
-                android:contentDescription="@string/menu_settings"
+                android:contentDescription="@string/mix_menu_open"
                 android:clickable="true"
                 android:focusable="true" />
         </LinearLayout>
