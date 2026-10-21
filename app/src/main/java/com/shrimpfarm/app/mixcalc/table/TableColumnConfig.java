@@ -5,13 +5,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 列的顺序、可见性与固定状态。
- *
- * <p>承接原有的 {@code columnIds} / {@code columnVisibility} / {@code columnFixed}。
- * {@link #visual()} 给出绘制顺序：<b>固定列在前、非固定列在后，各自保持原始顺序</b>，
- * 与原实现 {@code createFixedColumns} / {@code createScrollColumns} 的挑列方式一致。</p>
- */
+// 列的顺序、可见性、固定状态。
+// visual() 是绘制顺序：固定列排前面，非固定列排后面，各自保持原顺序。
 public class TableColumnConfig {
 
     private final List<TableColumn> columns = new ArrayList<>();
@@ -30,12 +25,10 @@ public class TableColumnConfig {
         rebuildVisualOrder();
     }
 
-    /** 原始顺序（= 原 columnIds 顺序）。 */
     public List<TableColumn> columns() {
         return columns;
     }
 
-    /** 绘制顺序：固定列在前 + 非固定列在后。 */
     public List<TableColumn> visual() {
         return visual;
     }

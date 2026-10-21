@@ -361,12 +361,9 @@ public class MixCalcActivity extends BaseActivity {
         showPrivacyConsentIfNeeded();
     }
 
-    /**
-     * 系统栏留白：状态栏区域涂深绿、底部导航栏区域涂白，高度取自 WindowInsets。
-     * <p>API 35+ 强制 edge-to-edge，内容会钻到系统栏底下，因此用两块 spacer 显式让开；
-     * 旧系统已由窗口自行让位（根布局在 window 里的 Y &gt; 0）时两块 spacer 归 0，
-     * 不会重复留白。</p>
-     */
+    // 系统栏留白：状态栏那块涂深绿、底部导航栏那块涂白，高度取 WindowInsets。
+    // API 35+ 强制 edge-to-edge，内容会钻到系统栏底下，所以拿两块 spacer 显式让开；
+    // 老系统窗口自己已经让过了（根布局在 window 里 Y > 0），这时两块 spacer 归 0，别重复留。
     private void setupSystemBarInsets() {
         final View root = findViewById(R.id.main_layout);
         final View statusSpacer = findViewById(R.id.status_bar_spacer);
@@ -427,8 +424,8 @@ public class MixCalcActivity extends BaseActivity {
 
     private boolean isTabletDevice(Context context) {
         try {
-            // 以 Android 标准的「最小宽度 ≥ 600dp」为主：部分平板 xdpi/ydpi 上报不准，
-            // 只靠物理对角线会把平板误判成手机，导致本该铺满的列被横向滚动截断。
+            // 主要看 Android 标准的最小宽度 ≥ 600dp。有些平板 xdpi/ydpi 上报不准，
+            // 只靠物理对角线会把平板当成手机，本该铺满的列就被横向滚动截断了。
             if (context.getResources().getConfiguration().smallestScreenWidthDp >= 600) {
                 return true;
             }
@@ -593,9 +590,7 @@ public class MixCalcActivity extends BaseActivity {
         applyRowChange(row);
     }
 
-    /**
-     * 行数据变化后的统一出口：无棚数时清空料格（对应旧的"禁用即清空"），重算并整表重绘。
-     */
+    // 行数据改动的统一出口：没棚数就清空料格（就是旧的"禁用即清空"），重算并整表重绘
     private void applyRowChange(int row) {
         FeedData data = getData(row);
         if (data == null) {
@@ -631,11 +626,9 @@ public class MixCalcActivity extends BaseActivity {
         saveAllData();
     }
 
-    /**
-     * 第 1 行棚数 = 基数 − 第 2..N 行棚数之和（允许 0 / 负数）。
-     * 基数：第 1 行棚号自动推出的棚数；若棚数格被手动改过，则以改后的值为基数。
-     * 必须在各行 updateAllCalculations() 之后调用，否则基数会被棚号重算覆盖。
-     */
+    // 第 1 行棚数 = 基数 − 第 2..N 行棚数之和，允许 0 或负数。
+    // 基数来自第 1 行棚号自动推出来的棚数；棚数格被手改过的话，基数就是改后的值。
+    // 得在各行 updateAllCalculations() 之后再调，不然基数会被棚号重算盖掉。
     private void recomputeFirstRowRemainder() {
         if (dataList == null || dataList.size() <= FIRST_ROW + 1) {
             return;
@@ -645,7 +638,7 @@ public class MixCalcActivity extends BaseActivity {
             return;
         }
 
-        // 进门前第 1 行的“剩余棚数”和它对应的“每棚平均”——平均是锚点，棚数变了它不变
+        // 记下进门前第 1 行的剩余棚数和它对应的每棚平均。平均是锚点，棚数变了它不变
         int oldShedCount = first.getShedCount();
         double oldAverage = first.getAverage(fermentedIncludedInAverage);
 
@@ -1202,7 +1195,7 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    /** 依据 columnIds / adaptiveColumnWidths / 可见 / 固定状态，重建引擎的列配置。 */
+    // 按 columnIds、adaptiveColumnWidths、可见和固定状态，重搭引擎的列配置
     private void applyColumnConfig() {
         if (table == null) {
             return;
@@ -1444,14 +1437,9 @@ public class MixCalcActivity extends BaseActivity {
         dialog.show();
     }
 
-    /**
-     * 表头弹窗：用 PopupWindow 锚在被点表头单元格的左下角，与"换料比例"弹窗位置一致。
-     *
-     * <p>Dialog 的窗口默认 gravity 为 CENTER，改 NO_GRAVITY 会被系统重新居中，
-     * 只有 PopupWindow.showAtLocation 能稳定贴住单元格。</p>
-     *
-     * @param cellRect 表头单元格在表格视图内坐标
-     */
+    // 表头弹窗：PopupWindow 贴在被点表头格左下角，位置跟"换料比例"弹窗一样。
+    // 用 PopupWindow 而不是 Dialog，是因为 Dialog 的窗口默认 gravity 是 CENTER，
+    // 改成 NO_GRAVITY 还是会被系统重新居中，贴不稳格子。
     private void showAnchoredListDialog(String title, String[] items, Rect cellRect,
                                         final DialogInterface.OnClickListener listener) {
         try {
@@ -1786,7 +1774,7 @@ public class MixCalcActivity extends BaseActivity {
         return false;
     }
 
-    /** 非发酵料列下标（0=粉 / 1=0.3 / 2=0.5 / 3=1.0），非非发酵料列返回 -1。 */
+    // 非发酵料列的下标（0=粉 1=0.3 2=0.5 3=1.0），不是非发酵料列返回 -1
     private int nonFermentedIndex(String columnId) {
         for (int i = 0; i < NF_FEED_COLUMNS.length; i++) {
             if (NF_FEED_COLUMNS[i].equals(columnId)) {
@@ -1841,10 +1829,8 @@ public class MixCalcActivity extends BaseActivity {
         return target != null && target.equals(columnId);
     }
 
-    /**
-     * 选完换料比例后立即重算一次：把该行当前“每棚平均”钉住（平均不变），
-     * 再按新比例把总量分给两档（大一号 = 总量×ratio），派生水量/称料。
-     */
+    // 选完换料比例马上重算：把该行当前的每棚平均钉住（平均不变），
+    // 再按新比例把总量分给两档（大一号 = 总量×ratio），派出水量和称料。
     private void applySwitchRatioNow(int row) {
         FeedData data = getData(row);
         if (data == null) {
@@ -2137,7 +2123,7 @@ public class MixCalcActivity extends BaseActivity {
         openAssetPage("help/index.html");
     }
 
-    /** 打开 assets 下的静态页（隐私政策 / 用户协议 / 使用帮助）。 */
+    // 打开 assets 里的静态页（隐私政策、用户协议、使用帮助）
     private void openAssetPage(String assetPath) {
         try {
             Intent intent = new Intent(this, com.shrimpfarm.app.AssetWebViewActivity.class);
@@ -2209,12 +2195,9 @@ public class MixCalcActivity extends BaseActivity {
 
     // ==================== 首次启动隐私同意弹窗 ====================
 
-    /**
-     * 未同意过隐私政策与使用协议时，弹出同意弹窗覆盖在主页上；拒绝则退出应用。
-     *
-     * <p>“已同意”按版本记录（{@link #KEY_PRIVACY_AGREED} 存当前 versionCode）：
-     * 应用升级后需重新同意，避免老用户升级直接跳过。</p>
-     */
+    // 没同意过隐私政策与使用协议就弹同意框盖在主页上，拒绝就退出。
+    // "已同意"按版本记（KEY_PRIVACY_AGREED 存当前 versionCode），升级后要重新同意，
+    // 免得老用户升级上来直接跳过。
     private void showPrivacyConsentIfNeeded() {
         final SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         if (prefs.getInt(KEY_PRIVACY_AGREED, 0) >= BuildConfig.VERSION_CODE) {
@@ -2315,7 +2298,7 @@ public class MixCalcActivity extends BaseActivity {
         buttonLayout.addView(btn, lp);
     }
 
-    /** 逐行读取 assets 下的文本文件（UTF-8）。 */
+    // 逐行读 assets 里的文本文件（UTF-8）
     private String[] readAssetLines(String fileName) {
         java.io.BufferedReader reader = null;
         try {
@@ -2461,7 +2444,8 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    /** 关闭后重开列设置弹窗：用 OnDismissListener 链式重开，避免 200ms 延迟叠加出两个弹窗。 */
+    // 关掉后重开列设置：用 OnDismissListener 接着重开，不用 postDelayed，
+    // 不然延迟一叠加会冒出两个弹窗。
     private void reopenColumnSettings(PopupWindow popup) {
         popup.setOnDismissListener(() -> {
             columnSettingsPopup = null;
@@ -2472,10 +2456,9 @@ public class MixCalcActivity extends BaseActivity {
         popup.dismiss();
     }
 
-    /**
-     * 把弹窗最高点贴到标题栏下沿、左边缘与表格对齐。手机/平板通用：
-     * 用屏幕坐标求差，避免 showAtLocation 的 y 相对 main_layout 而在平板被系统栏内缩时少算偏移。
-     */
+    // 把弹窗顶边贴到标题栏下沿、左边缘跟表格对齐，手机平板通用。
+    // 用屏幕坐标求差，因为 showAtLocation 的 y 是相对 main_layout 的，
+    // 平板 content 被系统栏内缩时会少算偏移，菜单就顶到标题栏上去了。
     private void showPopupUnderTitleBar(PopupWindow popup) {
         View menuBtn = findViewById(R.id.btn_menu);
         View titleBar = findViewById(R.id.title_bar);

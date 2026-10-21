@@ -3,17 +3,11 @@ package com.shrimpfarm.app.mixcalc.table;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 表格几何计算：列宽数组、前缀坐标、滚动范围、命中换算。
- *
- * <p>整张表只有一个坐标系：</p>
- * <ul>
- *   <li>固定列：x 不含横向偏移（冻结）</li>
- *   <li>非固定列：x = 前缀坐标 - scrollX</li>
- *   <li>表头/表尾：y 分别钉在 0 与视口底部（不随 scrollY 变化）</li>
- *   <li>正文行：y = headerHeight + row * rowHeight - scrollY</li>
- * </ul>
- */
+// 算表格几何：列宽、每列左边界的基准 x、滚动范围、坐标→行列的换算。
+// 全表共用一个坐标系：
+//   固定列 x 不加横向偏移，非固定列 x = 基准x - scrollX；
+//   表头钉在 y=0，表尾钉在视口底部，都不随 scrollY 变；
+//   正文行 y = headerHeight + row*rowHeight - scrollY。
 public class TableMetrics {
 
     public final List<TableColumn> visual = new ArrayList<>();
@@ -83,17 +77,17 @@ public class TableMetrics {
         maxScrollY = Math.max(0, rowCount * rowHeight - bodyHeight);
     }
 
-    /** 视觉列 vi 的左边界 x（固定列冻结；非固定列已含横向偏移）。 */
+    // 视觉列 vi 的左边界 x
     public int xOf(int vi, int scrollX) {
         return vi < fixedCount ? xBase[vi] : xBase[vi] - scrollX;
     }
 
-    /** 行 row 的顶部 y（正文区，含纵向偏移）。 */
+    // 第 row 行正文顶部的 y
     public int yOfRow(int row, int scrollY) {
         return headerHeight + row * rowHeight - scrollY;
     }
 
-    /** 正文区命中：返回行号，未命中返回 -1。 */
+    // y 落在哪一行，不在正文区返回 -1
     public int rowAt(float y, int scrollY) {
         float bodyY = y - headerHeight + scrollY;
         if (bodyY < 0) {
@@ -112,7 +106,7 @@ public class TableMetrics {
         return -1;
     }
 
-    /** 命中换算：返回视觉列下标，未命中返回 -1。 */
+    // x 落在哪一列，返回视觉列下标，不在任何列返回 -1
     public int visualIndexAt(float x, int scrollX) {
         if (x < fixedWidth) {
             for (int i = 0; i < fixedCount; i++) {

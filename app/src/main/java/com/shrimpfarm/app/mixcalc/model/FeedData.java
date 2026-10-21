@@ -205,7 +205,7 @@ public class FeedData {
     }
 
     public void updateAllCalculations(int waterPercentage, boolean fermentedIncludedInWater, boolean fermentedIncludedInAverage) {
-        // 换料比例只在“恰好两种非发酵料”时有效，否则自动作废
+        // 换料比例只有恰好两种非发酵料时才算数，不然直接作废
         if (countNonFermentedFeeds() != 2) {
             switchRatio = 0;
         }
@@ -215,10 +215,8 @@ public class FeedData {
         recalculateDerivedOnly(waterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
     }
 
-    /**
-     * 只重算依赖棚数的派生值（平均吃料 / 水量 / 称料），不动棚数本身。
-     * 供第 1 行扣完基数后刷新使用。
-     */
+    // 只重算跟棚数有关的派生值（平均吃料、水量、称料），棚数本身不动。
+    // 第一行扣完基数后刷一下就用它。
     public void recalculateDerivedOnly(int waterPercentage, boolean fermentedIncludedInWater, boolean fermentedIncludedInAverage) {
         if (isAverageManuallyModified) {
             if (canEditAverage()) {
@@ -294,10 +292,10 @@ public class FeedData {
         }
     }
 
-    // 手动设定平均后，把总量按规则分回料格
-    //   nf==0：只有发酵料 → 全给发酵料
-    //   nf==1：该非发酵料 = 平均×棚数 - (参与平均?发酵料:0)
-    //   nf==2：两料按比例分 平均×棚数 - (参与平均?发酵料:0)
+    // 手动填了平均之后，把总量按下面的规则拆回各料格
+    //   nf==0：只有发酵料，全给发酵料
+    //   nf==1：该非发酵料 = 平均×棚数 - (算平均的话扣掉发酵料)
+    //   nf==2：两料按比例分
     private void applyManualAverage(boolean fermentedIncludedInAverage) {
         double amount = average * shedCount;
         int nf = countNonFermentedFeeds();
@@ -325,7 +323,7 @@ public class FeedData {
                     break;
                 }
             }
-            // 已选换料比例且还有“大一号”可换：把总量按比例拆成两档（大一号 = 总量×ratio）
+            // 选了换料比例、后面还有大一号的料可换，就把总量按比例拆成两档（大一号 = 总量×ratio）
             if (small >= 0 && switchRatio > 0 && small + 1 <= NF_FEED10) {
                 double ratio = switchRatio;
                 if (ratio < 0.1) {
@@ -390,20 +388,12 @@ public class FeedData {
         }
     }
 
-    /**
-     * 换料完成：恰好两档非发酵料、且被清空的是粒径较小那档时，把 {@code amount}
-     * （进入编辑那一刻该格的原值）并入较大那档，本档清零。
-     *
-     * <p>用调用方传入的原值而非当前值：编辑浮层逐字符提交，退格清空到最后一位时
-     * 单元格早已被改小，只有编辑前的快照才是真正的"细粒径料数值"。</p>
-     *
-     * <p>合并后只剩一档，换料比例随之作废，即「除发酵料外只有一种料」的换料完成状态。
-     * 总量守恒，平均吃料 / 水量 / 称料都不变。</p>
-     *
-     * @param clearedIndex 被清空的非发酵料下标（0=粉 / 1=0.3 / 2=0.5 / 3=1.0）
-     * @param amount       并入较大那档的数值
-     * @return 并入的数值；条件不满足未合并返回 0
-     */
+    // 换料完成：恰好两档非发酵料、清空的是细的那档时，把这格编辑前的值
+    // (amount) 并进粗的那档，本档清零，返回并入的值；不满足条件返回 0。
+    // 为什么用调用方传的原值、不用当前值：浮层是逐字符提交的，退格退到最后一位时
+    // 格里的数早被改小了，只有编辑前的快照才是真正的"细粒径料数值"。
+    // 合完只剩一档，换料比例作废，也就是"除发酵料外只剩一种料"的完成态，总量守恒。
+    // clearedIndex 被清空的非发酵料下标：0=粉 1=0.3 2=0.5 3=1.0
     public double mergeSmallerWhenCleared(int clearedIndex, double amount) {
         if (clearedIndex < NF_POWDER || clearedIndex > NF_FEED10 || amount <= 0) {
             return 0;
@@ -415,7 +405,7 @@ public class FeedData {
                 continue;
             }
             if (i < clearedIndex) {
-                // 还有更细的一档有料：不满足"细粒径退场 → 换料完成"
+                // 前面还有更细的一档有料，不算"细粒径退场→换料完成"
                 return 0;
             }
             coarserIndex = i;

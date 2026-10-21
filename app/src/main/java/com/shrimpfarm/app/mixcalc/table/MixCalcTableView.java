@@ -18,18 +18,12 @@ import com.shrimpfarm.app.mixcalc.model.FeedData;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 自绘表格：整张表只有一个坐标系、一个 View。
- *
- * <p>横滚 / 纵滚 / 冻结列 / 吸顶表头 / 吸底表尾 全部由两个偏移量与统一几何决定：</p>
- * <ul>
- *   <li>横向只有一个 {@code offsetX}，表头与表尾复用同一偏移 → 横滚时一起动、天然对齐</li>
- *   <li>表头 y 钉在 0、表尾 y 钉在底部 → 纵滚时都不动</li>
- *   <li>固定列绘制时不加横向偏移 → 冻结</li>
- * </ul>
- *
- * <p>不存在"多个滚动容器互相同步"，因此不存在拖尾、回弹与边界错位。</p>
- */
+// 自绘表格：整张表一个坐标系、一个 View。
+// 横滚、纵滚、冻结列、吸顶表头、吸底表尾都靠两个偏移量加一套统一几何算出来：
+//   横向就一个 offsetX，表头和表尾共用它，所以横滚一起动、天然对齐；
+//   表头 y 钉在 0、表尾钉在底部，纵滚时都不动；
+//   固定列绘制时不加横向偏移，于是冻住。
+// 没有多个滚动容器互相同步，也就没有拖尾、回弹、边界错位。
 public class MixCalcTableView extends ViewGroup {
 
     private final List<FeedData> rows = new ArrayList<>();
@@ -51,20 +45,14 @@ public class MixCalcTableView extends ViewGroup {
     private final int maxFlingVelocity;
     private final int longPressTimeout;
 
-    /**
-     * fling 使用的边界远大于实际内容范围，避免 OverScroller 触发它的
-     * "startAfterEdge / cubic 落边" 路径 —— 正是那条曲线在快到边界时
-     * 给人「被磁铁吸一下」的手感。真实边界由 {@link #computeScroll()}
-     * 逐轴夹住，两个方向都滑不动时结束惯性，不做任何落边缓冲。
-     */
+    // fling 时给 OverScroller 一个超大的边界。边界给大了它就不走
+    // startAfterEdge 那套落边曲线，快到头时不会"像被磁铁吸一下"。
+    // 真正的边界在 computeScroll() 里逐轴夹，两边都滑不动就停惯性。
     private static final int FLING_UNBOUNDED = 1 << 28;
 
-    /**
-     * OverScroller spline 常量。这套值与 Android 平台 {@code OverScroller} 的
-     * 内部实现（{@code SPLINE_POSITION}/{@code SCROLL_FRICTION}）保持一致，
-     * 仅用于反解「滑完剩余距离所需速度」。若后续系统改了 spline 实现，
-     * 这里的手感封顶可能失准——升级 targetSdk 时需复核。
-     */
+    // 反解"滑完剩余距离需要多大速度"要用的 spline 常量，
+    // 数值跟平台 OverScroller 内部的对齐。哪天系统改了这套曲线，这边的封顶就会偏，
+    // 升级 targetSdk 时留意。
     private static final float SCROLL_FRICTION = ViewConfiguration.getScrollFriction();
     private static final double DECELERATION_RATE = Math.log(0.78) / Math.log(0.9);
 
@@ -146,20 +134,20 @@ public class MixCalcTableView extends ViewGroup {
         this.editListener = listener;
     }
 
-    /** 列配置或行数变化后调用：重新测量布局并重绘。 */
+    // 列配置或行数变了，重新测量并重绘
     public void requestRebuild() {
         requestLayout();
         invalidate();
     }
 
-    /** 全部数据变化：重新钳制偏移并整表重绘。 */
+    // 数据整体变了，先夹偏移再整表重绘
     public void notifyAllChanged() {
         clampOffsets();
         editor.onScrolled();
         invalidate();
     }
 
-    /** 单个单元格变化：局部重绘。 */
+    // 单个格变了，只重绘那一块
     public void notifyCellChanged(int row, String columnId) {
         Rect r = getCellRect(row, columnId);
         if (r == null) {
@@ -194,7 +182,7 @@ public class MixCalcTableView extends ViewGroup {
         editor.end();
     }
 
-    /** 单元格在表格视图内的矩形（供弹窗做锚点）。 */
+    // 格子在表格里的矩形，弹窗拿它当锚点
     public Rect getCellRect(int row, String columnId) {
         if (!metricsReady || metrics.visual.isEmpty()) {
             return null;
@@ -236,7 +224,7 @@ public class MixCalcTableView extends ViewGroup {
         return new Rect(x, top, x + col.widthPx, getHeight());
     }
 
-    /** 该格是否处于可见区（编辑浮层据此决定是否提交并隐藏）。 */
+    // 这格还在可见区吗？浮层靠它决定提交后收不收起
     public boolean isCellVisible(int row, String columnId) {
         Rect r = getCellRect(row, columnId);
         if (r == null) {
@@ -254,11 +242,8 @@ public class MixCalcTableView extends ViewGroup {
         return r.right > left + 1 && r.left < right - 1;
     }
 
-    /**
-     * 尺寸变化后保住正在编辑的格：先纵向滚动把它带回表体可视区，再判断是否仍然可见。
-     *
-     * @return false 表示该格已彻底不可见，浮层应当收起
-     */
+    // 尺寸变了，把正在编辑的格滚回可视区再看看还在不在。
+    // 返回 false 就是彻底看不见了，浮层该收。
     boolean keepEditingCellVisible(int row, String columnId) {
         if (metrics.bodyHeight <= 0 || metrics.rowCount <= 0) {
             return false;
@@ -282,10 +267,7 @@ public class MixCalcTableView extends ViewGroup {
         return x + col.widthPx > left && x < right;
     }
 
-    /**
-     * 纵向滚动最小距离，让该行完整落在表体内（贴合 ScrollView 原来的
-     * {@code requestChildRectangleOnScreen} 效果）。已可见时不动。
-     */
+    // 纵向滚最小的距离，让这行完整落进表体里。已经看得见就不动。
     private void revealRow(int row) {
         if (metrics.bodyHeight <= 0 || metrics.rowHeight <= 0) {
             return;
@@ -377,7 +359,7 @@ public class MixCalcTableView extends ViewGroup {
             if (scrollByTable(dx, dy)) {
                 postInvalidateOnAnimation();
             } else {
-                // 每个方向都已顶到真实边界且位移为 0：惯性到此为止
+                // 两个方向都顶到边界、位移也是 0，惯性停这
                 scroller.forceFinished(true);
             }
         }
@@ -405,16 +387,11 @@ public class MixCalcTableView extends ViewGroup {
         offsetY = clamp(offsetY, 0, metrics.maxScrollY);
     }
 
-    /**
-     * 把手指速度截到「沿该方向刚好滑完剩余距离」的速度。
-     *
-     * <p>表格可滚动距离远小于快速甩动的 spline 规划距离（6000px/s 就规划了
-     * 近 2000px），不封顶则几帧内撞到真实边界，观感是「离手即停」。封顶后
-     * 快速滑动走完整条自然减速曲线，滑到尽头时速度恰好衰减为 0。</p>
-     *
-     * <p>反解自 OverScroller 的 spline 距离公式（density / 摩擦系数与之保持
-     * 一致）：{@code distance = ref * exp(K * ln(0.35 * v / ref))}。</p>
-     */
+    // 把手指甩的速度砍到"沿这个方向刚好滑完剩余距离"那么大。
+    // 表格能滚的范围比甩动的 spline 规划距离小得多（6000px/s 能规划近 2000px），
+    // 不砍的话几帧就撞边界，感觉像离手就停。砍完能走完整条减速曲线，到尽头速度刚好降到 0。
+    // 公式是从 OverScroller 的 spline 距离公式反着解出来的：
+    //   distance = ref * exp(K * ln(0.35 * v / ref))
     private int capFlingVelocity(int velocity, int runwayPx) {
         if (velocity == 0 || runwayPx <= 0) {
             return 0;
@@ -601,10 +578,8 @@ public class MixCalcTableView extends ViewGroup {
     // 绘制
     // ------------------------------------------------------------------
 
-    /**
-     * 编辑浮层是子 View，天然画在 canvas 绘制的冻结列之上。这里按冻结列边界裁剪，
-     * 让获得焦点的格横滚时滑到序号列<b>下面</b>，而不是浮在它上面。
-     */
+    // 编辑浮层是个子 View，天然会盖在 canvas 画的冻结列上面。
+    // 这里按冻结列边界裁一刀，让编辑中的格横滚时滑到序号列底下，而不是浮在它上头。
     @Override
     protected void dispatchDraw(Canvas canvas) {
         if (!editor.isEditing() || metrics.visual.isEmpty()) {
@@ -666,7 +641,7 @@ public class MixCalcTableView extends ViewGroup {
             return;
         }
 
-        // 1. 非固定列（clip 到固定列右侧，滚动内容不会盖住冻结列）
+        // 先画非固定列，裁到固定列右边，滚动内容别盖住冻结列
         canvas.save();
         canvas.clipRect(metrics.fixedWidth, top, getWidth(), bottom);
         for (int vi = metrics.fixedCount; vi < metrics.visual.size(); vi++) {
@@ -681,7 +656,7 @@ public class MixCalcTableView extends ViewGroup {
         }
         canvas.restore();
 
-        // 2. 固定列
+        // 再画固定列
         canvas.save();
         canvas.clipRect(0, top, metrics.fixedWidth, bottom);
         for (int vi = 0; vi < metrics.fixedCount; vi++) {

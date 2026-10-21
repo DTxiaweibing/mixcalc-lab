@@ -13,20 +13,10 @@ import android.widget.EditText;
 
 import com.shrimpfarm.app.R;
 
-/**
- * 单元格编辑浮层：整张表只有一个 {@link EditText}，需要编辑时才显示在命中格上头。
- *
- * <p>它把编辑入口从"每个可编辑格常驻一个 EditText"改成"整表一个浮层"，但用户看到的仍是原生
- * 输入法 / 焦点 / 光标，输入体验不变。</p>
- *
- * <p>职责：</p>
- * <ul>
- *   <li>{@link #begin}：把浮层精确贴到命中格上并唤起输入法</li>
- *   <li>文本变化即实时回调 {@link OnCellEditListener#onCellCommitted}（保留原有"边输边算"）</li>
- *   <li>{@link #onScrolled}：滚动时跟随移动；滚出可见区则提交并收起</li>
- *   <li>输入法"下一个" → 回调 {@link OnCellEditListener#onEditNext}</li>
- * </ul>
- */
+// 单元格编辑浮层。整张表就一个 EditText，哪个格要编辑就贴到它上面。
+// 输入法、焦点、光标都是原生的，手感跟以前每个格各带一个 EditText 时一样。
+// begin 打开并弹键盘；文本一变就回调 onCellCommitted（保持边输边算）；
+// onScrolled 跟随滚动，滚出可见区就收起；键盘点"下一个"回调 onEditNext。
 class CellEditorOverlay {
 
     private final MixCalcTableView table;
@@ -36,9 +26,9 @@ class CellEditorOverlay {
     private int row = -1;
     private TableColumn column;
     private boolean editing;
-    /** 程序化设置文本期间抑制回调，避免"打开即提交"。 */
+    // 程序化 setText 时压住回调，不然一打开就当提交了
     private boolean suppress;
-    /** 用户是否真正改过文本：只点一下获得焦点就离开时不应提交。 */
+    // 用户是否真的动过文本。只是点一下拿到焦点又走开，不该提交
     private boolean dirty;
 
     CellEditorOverlay(MixCalcTableView table) {
@@ -89,16 +79,11 @@ class CellEditorOverlay {
         });
     }
 
-    /** 把浮层挂到表格里（唯一子 View）。 */
     void attach() {
         table.addView(editText);
     }
 
-    /**
-     * 打开编辑浮层。
-     *
-     * <p>若当前正在编辑另一格，先把旧格提交（不隐藏浮层），再平滑切到新格，输入法不闪断。</p>
-     */
+    // 打开浮层。要是正在编辑另一格，先把旧的提交掉，再切到新格，键盘不闪。
     void begin(int row, TableColumn column) {
         if (column == null || !column.editable) {
             return;
@@ -139,7 +124,7 @@ class CellEditorOverlay {
         showIme();
     }
 
-    /** 提交并收起浮层。 */
+    // 提交并收起
     void end() {
         if (!editing) {
             return;
@@ -149,7 +134,7 @@ class CellEditorOverlay {
         editText.setVisibility(View.GONE);
     }
 
-    /** 表格滚动后调用：跟随移动，滚出可见区则结束。 */
+    // 表格滚过之后跟着挪，滚出可见区就结束
     void onScrolled() {
         if (!editing || column == null) {
             return;
@@ -161,13 +146,13 @@ class CellEditorOverlay {
         layoutChild();
     }
 
-    /** 列配置/尺寸变化后调用：重定位，必要时结束。 */
+    // 列配置或尺寸变了之后重定位，实在留不住才收起
     void onMetricsChanged() {
         if (!editing || column == null) {
             return;
         }
-        // 尺寸变化（典型是输入法弹出把表挤矮）时先尝试把该行滚回可视区，
-        // 实在留不住才收起 —— 避免"点低位格 → 键盘刚弹就自己收掉"。
+        // 尺寸变化多半是键盘弹出把表挤矮了。先把这行滚回可视区，
+        // 留不住再收，免得"点低位格，键盘刚弹就自己没了"。
         if (!table.keepEditingCellVisible(row, column.id)) {
             end();
             return;
@@ -175,12 +160,12 @@ class CellEditorOverlay {
         layoutChild();
     }
 
-    /** 是否有浮层正在编辑（供表格决定要不要做冻结列裁剪）。 */
+    // 表格靠它判断要不要做冻结列裁剪
     boolean isEditing() {
         return editing && column != null;
     }
 
-    /** 正在编辑的格是否落在固定列中（决定浮层裁剪到哪一侧）。 */
+    // 正在编辑的格是不是固定列，决定浮层往哪边裁
     boolean isEditingFixedColumn() {
         if (!editing || column == null) {
             return false;
@@ -189,7 +174,7 @@ class CellEditorOverlay {
         return vi >= 0 && vi < table.metrics().fixedCount;
     }
 
-    /** 依据命中格矩形摆放浮层（表格 onLayout 与滚动时都会调用）。 */
+    // 按命中格的矩形摆浮层，onLayout 和滚动时都会调
     void layoutChild() {
         if (!editing || column == null) {
             return;

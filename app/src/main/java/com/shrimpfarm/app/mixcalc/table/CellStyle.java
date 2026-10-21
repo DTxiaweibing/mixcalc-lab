@@ -5,29 +5,21 @@ import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.util.TypedValue;
 
-/**
- * 集中所有画笔与颜色，全部在构造期建好并复用。
- *
- * <p>颜色取自原有 drawable，保证自绘外观与改造前一致：
- * 普通格白底黑边 0.5dp、禁用格 #F0F0F0 灰边、换料比例提示格 #F0F8F0、
- * 棚数超限警告格 #FFC64B 红边 1dp、表尾蓝/洋红按钮。</p>
- */
+// 画笔和颜色都放这，构造时建好反复用。颜色照旧 drawable 抄的，
+// 自绘出来跟改造前一样：普通格白底黑边，禁用格灰，换料提示浅绿，超限格黄底红边，表尾蓝/洋红按钮。
 public class CellStyle {
 
-    // ---- 单元格视觉状态（由 CellTextProvider 提供）----
     public static final int STATE_NORMAL = 0;
     public static final int STATE_DISABLED = 1;
     public static final int STATE_HIGHLIGHT = 2;
     public static final int STATE_WARNING = 3;
 
-    // ---- 表头视觉状态（由 CellTextProvider 提供）----
     public static final int HEADER_NORMAL = 0;
     public static final int HEADER_FERMENTED_GREEN_BROWN = 1;
     public static final int HEADER_FERMENTED_GRAY_BROWN = 2;
     public static final int HEADER_FERMENTED_GREEN = 3;
     public static final int HEADER_FERMENTED_GRAY = 4;
 
-    // ---- 表尾样式（由 CellTextProvider 提供）----
     public static final int FOOTER_NORMAL = 0;
     public static final int FOOTER_SEQ = 1;
     public static final int FOOTER_BLUE = 2;
@@ -66,7 +58,7 @@ public class CellStyle {
     public final int textValue = 0xFF0000FF;
     public final int textSeq = 0xFF666666;
 
-    /** 冻结列与滚动列交界处的分隔线颜色。 */
+    // 冻结列和滚动列的交界竖线
     public final int frozenDivider = 0x33000000;
 
     public final int rowHeight;
@@ -100,7 +92,6 @@ public class CellStyle {
         headerTextPaint.set(textPaint);
     }
 
-    /** 正文格填充色。 */
     public int bodyFill(int state) {
         switch (state) {
             case STATE_DISABLED:
@@ -114,7 +105,6 @@ public class CellStyle {
         }
     }
 
-    /** 正文格边框色。 */
     public int bodyStroke(int state) {
         switch (state) {
             case STATE_DISABLED:
@@ -126,12 +116,10 @@ public class CellStyle {
         }
     }
 
-    /** 正文格边框宽度。 */
     public float bodyStrokeWidth(int state) {
         return state == STATE_WARNING ? boldBorderWidth : borderWidth;
     }
 
-    /** 表头填充色。 */
     public int headerFill(int state) {
         switch (state) {
             case HEADER_FERMENTED_GREEN_BROWN:
@@ -145,7 +133,6 @@ public class CellStyle {
         }
     }
 
-    /** 表头边框色。 */
     public int headerStroke(int state) {
         switch (state) {
             case HEADER_FERMENTED_GREEN_BROWN:
@@ -156,7 +143,6 @@ public class CellStyle {
         }
     }
 
-    /** 表头边框宽度。 */
     public float headerStrokeWidth(int state) {
         switch (state) {
             case HEADER_FERMENTED_GREEN_BROWN:
@@ -167,7 +153,6 @@ public class CellStyle {
         }
     }
 
-    /** 表尾填充色。 */
     public int footerFill(int style) {
         if (style == FOOTER_BLUE) {
             return buttonBlueFill;
@@ -178,7 +163,6 @@ public class CellStyle {
         return cellFill;
     }
 
-    /** 表尾文本色。 */
     public int footerTextColor(int style) {
         if (style == FOOTER_BLUE || style == FOOTER_CARMINE) {
             return textWhite;
