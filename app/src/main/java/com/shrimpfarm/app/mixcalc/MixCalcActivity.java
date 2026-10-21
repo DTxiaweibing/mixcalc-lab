@@ -2206,7 +2206,7 @@ public class MixCalcActivity extends BaseActivity {
 
         // 读取弹窗文案；失败时不弹同意框（不能拿空文案完成授权），提示后退出
         String[] lines = readAssetLines("隐私政策与使用协议弹窗.txt");
-        if (lines.length < 5) {
+        if (lines.length < 4) {
             Log.e(TAG, "隐私弹窗文案缺失/损坏，行数=" + lines.length);
             Toast.makeText(this, getString(R.string.privacy_consent_load_fail), Toast.LENGTH_LONG).show();
             finishAndRemoveTask();
@@ -2215,8 +2215,10 @@ public class MixCalcActivity extends BaseActivity {
 
         String title = lines[0];
         String body = lines[1] + "\n\n" + lines[2];
-        String linkUser = lines[3];
-        String linkPrivacy = lines[4];
+        // 文案来自 assets 里的中文文件（不分语言），所以这两个词要跟正文里的中文一致，
+        // 不能用 getString（英文环境下会找不到）。
+        final String linkUser = "用户协议";
+        final String linkPrivacy = "隐私政策";
 
         try {
             final Dialog dialog = new Dialog(this);
@@ -2228,14 +2230,11 @@ public class MixCalcActivity extends BaseActivity {
             tvTitle.setText(title);
 
             TextView tvMessage = dialogView.findViewById(R.id.tv_message);
-            // 链接区在正文之后；正文里可能也出现"用户协议"字样，故从正文末尾开始查找，
-            // 避免把 span 套到正文上（那样末尾的链接就点不动）。
-            String linkText = linkUser + "　" + linkPrivacy;
-            String fullText = body + "\n\n" + linkText;
-            SpannableString span = new SpannableString(fullText);
-            int linkAreaStart = body.length() + 2;
-            int userStart = fullText.indexOf(linkUser, linkAreaStart);
-            int privacyStart = fullText.indexOf(linkPrivacy, linkAreaStart);
+            // 两个链接都在正文里，分别定位「用户协议」「隐私政策」的位置套 ClickableSpan。
+            // 隐私政策在正文中只出现一次；用户协议也只出现一次，直接 indexOf 即可。
+            SpannableString span = new SpannableString(body);
+            int userStart = body.indexOf(linkUser);
+            int privacyStart = body.indexOf(linkPrivacy);
             if (userStart >= 0) {
                 span.setSpan(new ClickableSpan() {
                     @Override
