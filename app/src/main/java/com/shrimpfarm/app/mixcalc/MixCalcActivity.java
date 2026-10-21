@@ -92,6 +92,7 @@ public class MixCalcActivity extends BaseActivity {
     // 棚数格的进入编辑快照：净结果没变时要还原，不能留下“手动修改”标记
     private int editBeginShedCount;
     private int editBeginShedBase;
+    private int editBeginShedBaseSum;
     private boolean editBeginShedManual;
 
     // 列管理
@@ -298,6 +299,7 @@ public class MixCalcActivity extends BaseActivity {
             editBeginValue = data == null ? 0 : getFeedValueByColumn(data, columnId);
             editBeginShedCount = data == null ? 0 : data.getShedCount();
             editBeginShedBase = data == null ? 0 : data.getShedCountBase();
+            editBeginShedBaseSum = data == null ? 0 : data.getShedCountBaseSum();
             editBeginShedManual = data != null && data.isShedCountManuallyModified();
         }
 
@@ -527,13 +529,16 @@ public class MixCalcActivity extends BaseActivity {
                     data.setShedCount(newCount);
                     data.setShedCountManuallyModified(!(newCount == 0 || value.isEmpty()));
                     if (row == FIRST_ROW) {
-                        // 第 1 行手改：改后的值就是新基数，其后仍继续扣后面各行
+                        // 第 1 行手改：改后的显示值就是新锚点，同时记下刻后面各行之和，
+                        // 之后只按“后面各行的增量”扣，不再重复扣
                         data.setShedCountBase(newCount);
+                        data.setShedCountBaseSum(sumShedCountsBelowFirstRow());
                     }
                 } else if (sameCell) {
                     // 净结果没变（只是获得焦点 / 输入后又改回原值）：还原快照，不算手动修改
                     data.setShedCountManuallyModified(editBeginShedManual);
                     data.setShedCountBase(editBeginShedBase);
+                    data.setShedCountBaseSum(editBeginShedBaseSum);
                 }
                 break;
             }
@@ -642,19 +647,23 @@ public class MixCalcActivity extends BaseActivity {
         int oldShedCount = first.getShedCount();
         double oldAverage = first.getAverage(fermentedIncludedInAverage);
 
-        // 未被手改：由棚号重新推出基数（先写进 shedCount）；手改过则基数已在 shedCountBase 里
+        // 未被手改：由棚号重新推出基数（先写进 shedCount）；手改过则基数是手改后的锚点值
         if (!first.isShedCountManuallyModified()) {
             first.calculateShedCount();
             first.setShedCountBase(first.getShedCount());
+            // 自动推导：基数要减掉后面各行全部（锚点为 0）
+            first.setShedCountBaseSum(0);
         } else if (first.getShedCountBase() <= 0) {
             // 覆盖安装升级上来的旧数据没有 shedCountBase：
             // 旧棚数 > 0 就当基数迁移；旧棚数为 0（无意义）则放开手改标记，交回棚号推导
             if (first.getShedCount() > 0) {
                 first.setShedCountBase(first.getShedCount());
+                first.setShedCountBaseSum(0);
             } else {
                 first.setShedCountManuallyModified(false);
                 first.calculateShedCount();
                 first.setShedCountBase(first.getShedCount());
+                first.setShedCountBaseSum(0);
             }
         }
 
@@ -666,7 +675,9 @@ public class MixCalcActivity extends BaseActivity {
             }
         }
 
-        int remainder = first.getShedCountBase() - sum;
+        // 手改过：基数是“手改那一刻的显示值”，只扣后面各行相对那一刻的增量，
+        // 不重复扣（手改 32→28、第 2 行 3 个时，显示就该是 28 而不是 25）
+        int remainder = first.getShedCountBase() - (sum - first.getShedCountBaseSum());
         first.setShedCountDirectly(remainder, first.isShedCountManuallyModified());
 
         // 棚数变了：钉住“每棚平均”，让料量(含称料) / 水量按新棚数重算；
@@ -679,6 +690,21 @@ public class MixCalcActivity extends BaseActivity {
 
         first.recalculateDerivedOnly(globalWaterPercentage,
                 fermentedIncludedInWater, fermentedIncludedInAverage);
+    }
+
+    // 第 2..N 行棚数之和，手改第 1 行时用来记锚点
+    private int sumShedCountsBelowFirstRow() {
+        if (dataList == null) {
+            return 0;
+        }
+        int sum = 0;
+        for (int i = FIRST_ROW + 1; i < dataList.size(); i++) {
+            FeedData d = dataList.get(i);
+            if (d != null) {
+                sum += d.getShedCount();
+            }
+        }
+        return sum;
     }
 
     private double parseDouble(String text) {
@@ -1654,6 +1680,7 @@ public class MixCalcActivity extends BaseActivity {
                 data.setShedNumber("");
                 data.setShedCountDirectly(0, false);
                 data.setShedCountBase(0);
+                data.setShedCountBaseSum(0);
                 data.setFermentedFeed(0);
                 data.setPowderFeed(0);
                 data.setFeed03(0);

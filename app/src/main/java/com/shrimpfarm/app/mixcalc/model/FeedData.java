@@ -7,8 +7,11 @@ import org.json.JSONObject;
 public class FeedData {
     private String shedNumber;
     private int shedCount;
-    // 第 1 行专用：未扣减的基数（第 2..N 行棚数之和要从这里扣掉）
+    // 第 1 行专用：锚点值，手改后的显示值。
+    // 第一行显示值 = shedCountBase - (后面各行之和 - shedCountBaseSum)
     private int shedCountBase;
+    // 第 1 行专用：设锚点那一刻，后面各行棚数之和。用来只扣“增量”，不重复扣
+    private int shedCountBaseSum;
     private double average;
     private double fermentedFeed;
     private double powderFeed;
@@ -30,6 +33,7 @@ public class FeedData {
         this.shedNumber = "";
         this.shedCount = 0;
         this.shedCountBase = 0;
+        this.shedCountBaseSum = 0;
         this.average = 0;
         this.fermentedFeed = 0;
         this.powderFeed = 0;
@@ -57,6 +61,7 @@ public class FeedData {
             json.put("shedNumber", shedNumber != null ? shedNumber : "");
             json.put("shedCount", shedCount);
             json.put("shedCountBase", shedCountBase);
+            json.put("shedCountBaseSum", shedCountBaseSum);
             json.put("average", average);
             json.put("fermentedFeed", fermentedFeed);
             json.put("powderFeed", powderFeed);
@@ -82,6 +87,7 @@ public class FeedData {
                 shedNumber = json.optString("shedNumber", "");
                 shedCount = json.optInt("shedCount", 0);
                 shedCountBase = json.optInt("shedCountBase", 0);
+                shedCountBaseSum = json.optInt("shedCountBaseSum", 0);
                 average = json.optDouble("average", 0);
                 fermentedFeed = json.optDouble("fermentedFeed", 0);
                 powderFeed = json.optDouble("powderFeed", 0);
@@ -238,6 +244,14 @@ public class FeedData {
 
     public void setShedCountBase(int shedCountBase) {
         this.shedCountBase = shedCountBase;
+    }
+
+    public int getShedCountBaseSum() {
+        return shedCountBaseSum;
+    }
+
+    public void setShedCountBaseSum(int shedCountBaseSum) {
+        this.shedCountBaseSum = shedCountBaseSum;
     }
 
     // 非发酵料（粉/0.3/0.5/1.0）中有数据的种类数
