@@ -2230,6 +2230,8 @@ public class MixCalcActivity extends BaseActivity {
             tvTitle.setText(title);
 
             TextView tvMessage = dialogView.findViewById(R.id.tv_message);
+            // 隐私正文单独调小一号，免得差一个字就折行
+            tvMessage.setTextSize(13);
             // 两个链接都在正文里，分别定位「用户协议」「隐私政策」的位置套 ClickableSpan。
             // 隐私政策在正文中只出现一次；用户协议也只出现一次，直接 indexOf 即可。
             SpannableString span = new SpannableString(body);

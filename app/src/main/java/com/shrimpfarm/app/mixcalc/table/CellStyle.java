@@ -49,7 +49,6 @@ public class CellStyle {
     public final int buttonCarmineFill = 0xFF960018;
 
     public final int fermentedFillGreen = 0xFFF0F8F0;
-    public final int fermentedFillGray = 0xFFF0F0F0;
     public final int fermentedStrokeBrown = 0xFF6E511E;
     public final int fermentedStrokeBlack = 0xFF000000;
 
@@ -125,10 +124,9 @@ public class CellStyle {
             case HEADER_FERMENTED_GREEN_BROWN:
             case HEADER_FERMENTED_GREEN:
                 return fermentedFillGreen;
-            case HEADER_FERMENTED_GRAY_BROWN:
-            case HEADER_FERMENTED_GRAY:
-                return fermentedFillGray;
             default:
+                // 发酵料表头不参与水分时一律白底（跟普通表头一致）；
+                // GRAY_BROWN 的"参与平均"提示靠棕边区分
                 return cellFill;
         }
     }
