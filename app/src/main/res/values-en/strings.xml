@@ -3,6 +3,7 @@
     <string name="seq_stat_format">%1$d/%2$d</string>
     <string name="water_percentage_header">Water %d%%</string>
     <string name="title_mix_calculator">Mix Calculator</string>
+    <string name="app_name">ShrimpFeed</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_ok">OK</string>
     <string name="mix_col_seq">NO.</string>
@@ -17,6 +18,9 @@
     <string name="mix_col_water">Water</string>
     <string name="mix_col_weigh">Weigh</string>
     <string name="mix_btn_reset">Reset</string>
+    <string name="mix_btn_help">Help</string>
+    <string name="mix_dialog_switch_done_title">Mix Change Done</string>
+    <string name="mix_dialog_switch_done_msg">Fine feed merged into coarse feed. Mix change complete.</string>
     <string name="mix_toast_rebuild_fail">Rebuild failed</string>
     <string name="mix_toast_no_change">No change</string>
     <string name="mix_toast_setting_fail">Setting failed</string>
@@ -104,6 +108,11 @@
     <string name="mix_menu_privacy_policy">Privacy Policy</string>
     <string name="mix_menu_user_agreement">User Agreement</string>
     <string name="mix_menu_help">Help</string>
+    <string name="mix_menu_language">Language</string>
+    <string name="mix_lang_dialog_title">Select Language</string>
+    <string name="mix_lang_option_zh">简体中文</string>
+    <string name="mix_lang_option_en">English</string>
+    <string name="mix_lang_option_system">Follow System</string>
     <string name="mix_menu_version_format">Version: v%1$s</string>
     <string name="privacy_dialog_title">Privacy Policy and User Agreement</string>
     <string name="privacy_btn_disagree">Decline</string>

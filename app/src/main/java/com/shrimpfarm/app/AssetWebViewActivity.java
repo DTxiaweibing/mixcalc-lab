@@ -59,6 +59,20 @@ public class AssetWebViewActivity extends BaseActivity {
         settings.setSupportZoom(false);
 
         String path = getIntent().getStringExtra(EXTRA_ASSET_PATH);
-        webView.loadUrl("file:///android_asset/" + (path == null ? "" : path));
+        webView.loadUrl("file:///android_asset/" + resolveAssetPath(path == null ? "" : path));
+    }
+
+    // 英文环境优先加载 assets-en 下的同名页；没有就退回中文 assets。
+    private String resolveAssetPath(String path) {
+        if (LocaleManager.LANG_EN.equals(LocaleManager.getEffectiveLanguage(this))) {
+            String enPath = "en/" + path;
+            try {
+                getAssets().open(enPath).close();
+                return enPath;
+            } catch (Exception ignored) {
+                // assets-en 下没这个文件，退回中文
+            }
+        }
+        return path;
     }
 }

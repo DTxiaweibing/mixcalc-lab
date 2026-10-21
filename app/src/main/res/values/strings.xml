@@ -3,6 +3,7 @@
     <string name="seq_stat_format">%1$d/%2$d</string>
     <string name="water_percentage_header">水%d%%</string>
     <string name="title_mix_calculator">养虾拌料计算器</string>
+    <string name="app_name">秒算虾料</string>
     <string name="btn_cancel">取消</string>
     <string name="btn_ok">确定</string>
     <string name="mix_col_seq">序号</string>
@@ -107,6 +108,11 @@
     <string name="mix_menu_privacy_policy">隐私政策</string>
     <string name="mix_menu_user_agreement">用户协议</string>
     <string name="mix_menu_help">使用帮助</string>
+    <string name="mix_menu_language">语言</string>
+    <string name="mix_lang_dialog_title">选择语言</string>
+    <string name="mix_lang_option_zh">简体中文</string>
+    <string name="mix_lang_option_en">English</string>
+    <string name="mix_lang_option_system">跟随系统</string>
     <string name="mix_menu_version_format">版本:v%1$s</string>
     <string name="privacy_dialog_title">隐私政策与使用协议</string>
     <string name="privacy_btn_disagree">拒绝</string>

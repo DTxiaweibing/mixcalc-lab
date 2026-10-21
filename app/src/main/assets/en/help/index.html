@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Help - Mix Calculator</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui, sans-serif;}
+        body{
+            background:#ffffff;color:#222;padding:16px;line-height:1.7;font-size:19px;
+            -webkit-overflow-scrolling: touch;
+        }
+        h1{font-size:26px;color:#2b8c40;margin-bottom:2px;text-align:center;}
+        .subtitle{font-size:17px;color:#2b8c40;margin-bottom:16px;text-align:center;}
+        .tip{background:#f0f8f2;padding:14px;border-radius:10px;margin-bottom:18px;}
+        .container{
+            padding-bottom: 20px;
+        }
+        .img-item{margin:20px 0;}
+        img{max-width:100%;height:auto;border-radius:8px;display:block;margin:6px auto;}
+        .caption{font-size:16px;color:#555;text-align:center;margin-top:4px;}
+        .desc{margin:6px 0 10px 0;}
+    </style>
+</head>
+<body>
+<div class="container" id="box">
+    <h1>Mix Calculator</h1>
+    <div class="subtitle">Help</div>
+
+    <div class="tip">
+        <p>In the first row's shed-number cell, enter a range (min-max), e.g. 1-40, 1 to 40, 1~40.</p>
+        <p>Sheds with different feed amounts go on a separate row. Multiple numbers can be separated by space, comma, or enumeration comma.</p>
+    </div>
+
+    <div class="img-item">
+        <img src="../../help/img1.jpg" alt="Shed number table">
+        <p class="desc">Enter shed info: consecutive sheds as a range; sheds with different feed amounts on separate rows.</p>
+        <div class="caption">Fig 1: Shed number example (1-32 means sheds 1 to 32)</div>
+    </div>
+
+    <div class="img-item">
+        <img src="../../help/img2.jpg" alt="Column menu">
+        <p class="desc">Column ops: long-press a header cell to fix or hide columns, adjusting the display for small phone screens.</p>
+        <div class="caption">Fig 2: Column ops - fix, hide, show columns</div>
+    </div>
+
+    <div class="img-item">
+        <img src="../../help/img3.jpg" alt="Fermented feed setting">
+        <p class="desc">Fermented feed setting: tap the fermented-feed header cell to choose whether that row's fermented feed counts toward water and feed.</p>
+        <div class="caption">Fig 3: Fermented setting - include in water/feed or not</div>
+    </div>
+
+    <div class="img-item">
+        <img src="../../help/img4.jpg" alt="Water percentage">
+        <p class="desc">Tap the water-percentage header cell to pick the mix moisture, choosing the water ratio per your needs.</p>
+        <div class="caption">Fig 4: Mix moisture selection (10%-40%)</div>
+    </div>
+
+    <div class="img-item">
+        <img src="../../help/img5.jpg" alt="Mix-change ratio">
+        <p class="desc">Long-press the cell for feed-change data to set the transition ratio, used when gradually replacing feed.</p>
+        <div class="caption">Fig 5: Mix-change ratio setting</div>
+    </div>
+
+    <div class="img-item">
+        <img src="../../help/img6.jpg" alt="Mix change done">
+        <p class="desc">After manually clearing a fine-feed cell, the system merges the fine feed into the coarse-feed cell, completing the change automatically.</p>
+        <div class="caption">Fig 6: Mix change done prompt</div>
+    </div>
+</div>
+
+<script>
+(function(){
+    let timer = null;
+    let acc = 0;
+    const speed = 0.4;
+
+    function getScroller(){
+        return document.scrollingElement || document.documentElement;
+    }
+
+    function startAutoScroll(){
+        stopAutoScroll();
+        acc = 0;
+        timer = setInterval(function(){
+            const el = getScroller();
+            const max = el.scrollHeight - el.clientHeight;
+
+            if (max <= 0) return;
+
+            if (el.scrollTop >= max - 5) {
+                window.scrollTo(0, 0);
+                acc = 0;
+                return;
+            }
+
+            acc += speed;
+            const step = Math.floor(acc);
+            if (step > 0) {
+                acc -= step;
+                window.scrollBy(0, step);
+            }
+        }, 30);
+    }
+
+    function stopAutoScroll(){
+        if (timer !== null) {
+            clearInterval(timer);
+            timer = null;
+        }
+    }
+
+    document.body.addEventListener('touchstart', stopAutoScroll);
+    document.body.addEventListener('mousedown', stopAutoScroll);
+
+    document.addEventListener('DOMContentLoaded', function(){
+        setTimeout(startAutoScroll, 300);
+    });
+    window.addEventListener('load', startAutoScroll);
+})();
+</script>
+</body>
+</html>

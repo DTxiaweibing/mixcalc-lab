@@ -796,6 +796,17 @@ public class MixCalcTableView extends ViewGroup {
         }
         Paint paint = style.textPaint;
         paint.setColor(color);
+
+        // 文字比格子宽就缩小字号塞进去，防止超出单元格（英文表头词普遍比中文长）。
+        // textPaint 是共用的，缩完必须还原，不然会影响后面的格子。
+        float originalTextSize = paint.getTextSize();
+        float availWidth = (right - left) - 4f;
+        float textWidth = paint.measureText(text);
+        if (textWidth > availWidth && textWidth > 0) {
+            float scaled = originalTextSize * (availWidth / textWidth);
+            paint.setTextSize(Math.max(scaled, originalTextSize * 0.5f));
+        }
+
         Paint.FontMetrics fm = paint.getFontMetrics();
         float cx = (left + right) / 2f;
         float cy = (top + bottom) / 2f - (fm.ascent + fm.descent) / 2f;
@@ -804,6 +815,8 @@ public class MixCalcTableView extends ViewGroup {
         canvas.clipRect(left, top, right, bottom);
         canvas.drawText(text, cx, cy, paint);
         canvas.restore();
+
+        paint.setTextSize(originalTextSize);
     }
 
     // ------------------------------------------------------------------

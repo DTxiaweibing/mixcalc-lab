@@ -2,6 +2,7 @@ package com.shrimpfarm.app;
 
 import android.annotation.SuppressLint;
 import android.app.Dialog;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -20,6 +21,12 @@ import androidx.appcompat.app.AppCompatActivity;
  * 只保留 MixCalcActivity 实际调用到的对话框能力。
  */
 public abstract class BaseActivity extends AppCompatActivity {
+
+    @Override
+    protected void attachBaseContext(Context newBase) {
+        // 用户手动选过语言的话，在这里套上，覆盖系统默认
+        super.attachBaseContext(LocaleManager.applyLocale(newBase));
+    }
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {

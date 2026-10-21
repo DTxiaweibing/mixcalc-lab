@@ -2161,6 +2161,41 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
+    // 语言选择：中文 / English / 跟随系统。选完存偏好并重建界面。
+    private void showLanguageDialog() {
+        try {
+            final String[] keys = {
+                    com.shrimpfarm.app.LocaleManager.LANG_ZH,
+                    com.shrimpfarm.app.LocaleManager.LANG_EN,
+                    com.shrimpfarm.app.LocaleManager.LANG_SYSTEM
+            };
+            String[] labels = {
+                    getString(R.string.mix_lang_option_zh),
+                    getString(R.string.mix_lang_option_en),
+                    getString(R.string.mix_lang_option_system)
+            };
+            int[] colors = {0xFF2E7D32, 0xFF2E7D32, 0xFF333333};
+            DialogInterface.OnClickListener[] listeners = new DialogInterface.OnClickListener[keys.length];
+            for (int i = 0; i < keys.length; i++) {
+                final String key = keys[i];
+                listeners[i] = (d, which) -> applyLanguage(key);
+            }
+            showStyledConfirmDialog70(getString(R.string.mix_lang_dialog_title),
+                    "", labels, colors, listeners);
+        } catch (Exception e) {
+            Log.e(TAG, "显示语言选择异常: " + e.getMessage());
+        }
+    }
+
+    private void applyLanguage(String lang) {
+        String current = com.shrimpfarm.app.LocaleManager.getSavedLanguage(this);
+        if (lang != null && lang.equals(current)) {
+            return;
+        }
+        com.shrimpfarm.app.LocaleManager.setLanguage(this, lang);
+        recreate();
+    }
+
     // ==================== 主菜单下拉（快捷设置 / 隐私政策 / 用户协议 / 使用帮助） ====================
 
     private void showMainMenu() {
@@ -2201,6 +2236,10 @@ public class MixCalcActivity extends BaseActivity {
                 popup.dismiss();
                 showHelpPanel();
             });
+            popupView.findViewById(R.id.menu_item_language).setOnClickListener(v -> {
+                popup.dismiss();
+                showLanguageDialog();
+            });
 
             // 版本号：取构建配置里的真实 versionName（app/build.gradle）
             TextView versionTv = popupView.findViewById(R.id.menu_item_version);
@@ -2231,8 +2270,13 @@ public class MixCalcActivity extends BaseActivity {
             return;
         }
 
+        // 按语言选弹窗文案：英文环境读 assets/en 下的英文版，否则用中文版
+        boolean isEnglish = com.shrimpfarm.app.LocaleManager.LANG_EN
+                .equals(com.shrimpfarm.app.LocaleManager.getEffectiveLanguage(this));
+        String consentFile = isEnglish ? "en/privacy_consent.txt" : "隐私政策与使用协议弹窗.txt";
+
         // 读取弹窗文案；失败时不弹同意框（不能拿空文案完成授权），提示后退出
-        String[] lines = readAssetLines("隐私政策与使用协议弹窗.txt");
+        String[] lines = readAssetLines(consentFile);
         if (lines.length < 4) {
             Log.e(TAG, "隐私弹窗文案缺失/损坏，行数=" + lines.length);
             Toast.makeText(this, getString(R.string.privacy_consent_load_fail), Toast.LENGTH_LONG).show();
@@ -2242,10 +2286,9 @@ public class MixCalcActivity extends BaseActivity {
 
         String title = lines[0];
         String body = lines[1] + "\n\n" + lines[2];
-        // 文案来自 assets 里的中文文件（不分语言），所以这两个词要跟正文里的中文一致，
-        // 不能用 getString（英文环境下会找不到）。
-        final String linkUser = "用户协议";
-        final String linkPrivacy = "隐私政策";
+        // 文案里的链接词要跟正文用的语言一致，不能用 getString（另一语言环境下会找不到）。
+        final String linkUser = isEnglish ? "User Agreement" : "用户协议";
+        final String linkPrivacy = isEnglish ? "Privacy Policy" : "隐私政策";
 
         try {
             final Dialog dialog = new Dialog(this);
