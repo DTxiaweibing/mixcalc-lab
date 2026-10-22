@@ -66,7 +66,6 @@ public class MixCalcActivity extends BaseActivity {
     private static final String KEY_FIXED_COLUMN = "fixed_column_";
     private static final String KEY_SAVED_DATA = "saved_data";
     private static final String KEY_GLOBAL_WATER = "global_water";
-    private static final String KEY_NEVER_SHOW_DOWNLOAD_DIALOG = "never_show_download_dialog";
     private static final String KEY_FERMENTED_INCLUDED_IN_WATER = "fermented_included_in_water";
     private static final String KEY_FERMENTED_INCLUDED_IN_AVERAGE = "fermented_included_in_average";
     // 已同意的 versionCode：>= 当前版本才视为已同意（升级后需重新同意）
@@ -1621,57 +1620,6 @@ public class MixCalcActivity extends BaseActivity {
             }
         }
         return count;
-    }
-
-    // 显示下载对话框
-    private void showDownloadDialog() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            boolean neverShow = prefs.getBoolean(KEY_NEVER_SHOW_DOWNLOAD_DIALOG, false);
-
-            if (neverShow) {
-                return;
-            }
-
-            final String downloadUrl = "https://github.com/DTxiaweibing/-2/releases/download/%E5%85%BB%E8%99%BE%E5%8A%A9%E6%89%8B1.63.8.61/1.63.8.61.apk";
-            String message = getString(R.string.mix_msg_install_app);
-
-            showStyledConfirmDialog70(getString(R.string.mix_title_install_app), message,
-                new String[]{getString(R.string.mix_btn_later), getString(R.string.mix_btn_no_prompt), getString(R.string.mix_btn_download)},
-                new int[]{0xFF666666, 0xFF999999, 0xFF2196F3},
-                new DialogInterface.OnClickListener[]{
-                    null,
-                    (dialog, which) -> {
-                        SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-                        sp.edit().putBoolean(KEY_NEVER_SHOW_DOWNLOAD_DIALOG, true).apply();
-                        Toast.makeText(MixCalcActivity.this, getString(R.string.mix_toast_dismiss_download), Toast.LENGTH_SHORT).show();
-                    },
-                    (dialog, which) -> {
-                        Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl));
-                        try {
-                            startActivity(browserIntent);
-                        } catch (Exception e) {
-                            showStyledConfirmDialog70(getString(R.string.mix_title_open_link_fail),
-                                getString(R.string.mix_msg_open_link_fail, downloadUrl),
-                                new String[]{getString(R.string.btn_cancel), getString(R.string.mix_btn_copy_link)},
-                                new int[]{0xFF666666, 0xFF2196F3},
-                                new DialogInterface.OnClickListener[]{
-                                    null,
-                                    (d, w) -> {
-                                        android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                                        android.content.ClipData clip = android.content.ClipData.newPlainText("下载链接", downloadUrl);
-                                        clipboard.setPrimaryClip(clip);
-                                        Toast.makeText(MixCalcActivity.this, getString(R.string.mix_toast_link_copied), Toast.LENGTH_SHORT).show();
-                                    }
-                                });
-                        }
-                    }
-                });
-
-        } catch (Exception e) {
-            Log.e(TAG, "显示下载对话框异常: " + e.getMessage());
-            Toast.makeText(this, getString(R.string.mix_toast_download_fail), Toast.LENGTH_SHORT).show();
-        }
     }
 
     private void resetAllData() {
