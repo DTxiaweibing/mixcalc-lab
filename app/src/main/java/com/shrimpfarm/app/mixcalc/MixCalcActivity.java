@@ -2007,7 +2007,7 @@ public class MixCalcActivity extends BaseActivity {
 
             final String[] items = menuItems.toArray(new String[0]);
 
-            showAnchoredListDialog(getString(R.string.mix_menu_col_op) + " - " + columnNames[columnIndex], items, cellRect, (dialog, which) -> {
+            showAnchoredListDialog(getString(R.string.mix_menu_col_op_format, columnNames[columnIndex]), items, cellRect, (dialog, which) -> {
                 handleColumnOperation(columnIndex, columnId, items[which]);
             });
 
@@ -2161,27 +2161,50 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 语言选择：中文 / English / 跟随系统。选完存偏好并重建界面。
+    // 语言选择：单选列表 + 取消，选完存偏好并重建界面。
     private void showLanguageDialog() {
         try {
             final String[] keys = {
+                    com.shrimpfarm.app.LocaleManager.LANG_SYSTEM,
                     com.shrimpfarm.app.LocaleManager.LANG_ZH,
-                    com.shrimpfarm.app.LocaleManager.LANG_EN,
-                    com.shrimpfarm.app.LocaleManager.LANG_SYSTEM
+                    com.shrimpfarm.app.LocaleManager.LANG_EN
             };
             String[] labels = {
+                    getString(R.string.mix_lang_option_system),
                     getString(R.string.mix_lang_option_zh),
-                    getString(R.string.mix_lang_option_en),
-                    getString(R.string.mix_lang_option_system)
+                    getString(R.string.mix_lang_option_en)
             };
-            int[] colors = {0xFF2E7D32, 0xFF2E7D32, 0xFF333333};
-            DialogInterface.OnClickListener[] listeners = new DialogInterface.OnClickListener[keys.length];
+            String current = com.shrimpfarm.app.LocaleManager.getSavedLanguage(this);
+            int checked = 0;
             for (int i = 0; i < keys.length; i++) {
-                final String key = keys[i];
-                listeners[i] = (d, which) -> applyLanguage(key);
+                if (keys[i].equals(current)) { checked = i; break; }
             }
-            showStyledConfirmDialog70(getString(R.string.mix_lang_dialog_title),
-                    "", labels, colors, listeners);
+
+            Dialog dialog = new Dialog(this);
+            View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_language, null);
+            dialog.setContentView(dialogView);
+            dialog.setCanceledOnTouchOutside(true);
+
+            TextView tvTitle = dialogView.findViewById(R.id.tv_title);
+            tvTitle.setText(R.string.mix_lang_dialog_title);
+
+            android.widget.ListView lv = dialogView.findViewById(R.id.lv_languages);
+            android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(
+                    this, R.layout.item_language, labels);
+            lv.setAdapter(adapter);
+            lv.setItemChecked(checked, true);
+            lv.setOnItemClickListener((parent, view, position, id) -> {
+                dialog.dismiss();
+                applyLanguage(keys[position]);
+            });
+
+            Button btnCancel = dialogView.findViewById(R.id.btn_cancel);
+            btnCancel.setOnClickListener(v -> dialog.dismiss());
+
+            dialog.getWindow().setLayout(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            dialog.show();
         } catch (Exception e) {
             Log.e(TAG, "显示语言选择异常: " + e.getMessage());
         }

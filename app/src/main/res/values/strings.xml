@@ -44,7 +44,7 @@
     <string name="mix_menu_show_col">显示此列</string>
     <string name="mix_menu_show_all">显示所有列</string>
     <string name="mix_menu_unfix_all">取消所有固定</string>
-    <string name="mix_menu_col_op">列操作</string>
+    <string name="mix_menu_col_op_format">列操作 - %1$s</string>
     <string name="mix_col_fixed">列已固定</string>
     <string name="mix_col_unfixed">列已取消固定</string>
     <string name="mix_col_hidden">列已隐藏</string>
@@ -108,7 +108,7 @@
     <string name="mix_menu_privacy_policy">隐私政策</string>
     <string name="mix_menu_user_agreement">用户协议</string>
     <string name="mix_menu_help">使用帮助</string>
-    <string name="mix_menu_language">语言</string>
+    <string name="mix_menu_language">选择语言</string>
     <string name="mix_lang_dialog_title">选择语言</string>
     <string name="mix_lang_option_zh">简体中文</string>
     <string name="mix_lang_option_en">English</string>
