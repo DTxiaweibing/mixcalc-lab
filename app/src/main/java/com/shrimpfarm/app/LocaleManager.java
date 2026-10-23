@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.content.res.Resources;
-import android.os.Build;
 import android.os.LocaleList;
 
 import java.util.Locale;
@@ -54,28 +53,41 @@ public final class LocaleManager {
             return LANG_ZH;
         }
         // 跟随系统：中文环境算 zh，其余算 en
-        String sys = Locale.getDefault().getLanguage();
+        String sys = getSystemLocale().getLanguage();
         return LANG_ZH.equals(sys) ? LANG_ZH : LANG_EN;
     }
 
     // 给 Context 套上选中语言，返回套好的 Context（attachBaseContext 用）
     public static Context applyLocale(Context context) {
         String saved = getSavedLanguage(context);
-        if (LANG_SYSTEM.equals(saved)) {
-            // 没手动选过，交回系统默认
-            return context;
+        LocaleList locales;
+        if (LANG_EN.equals(saved)) {
+            locales = new LocaleList(Locale.ENGLISH);
+        } else if (LANG_ZH.equals(saved)) {
+            locales = new LocaleList(Locale.SIMPLIFIED_CHINESE);
+        } else {
+            // 跟随系统：重新取系统 locale，不能沿用上一次手动选择留下的全局状态
+            locales = getSystemLocales();
         }
-        Locale locale = LANG_EN.equals(saved) ? Locale.ENGLISH : Locale.SIMPLIFIED_CHINESE;
-        return wrap(context, locale);
+        return wrap(context, locales);
     }
 
-    private static Context wrap(Context context, Locale locale) {
-        Configuration config = new Configuration(context.getResources().getConfiguration());
-        Locale.setDefault(locale);
-        config.setLocale(locale);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            config.setLocales(new LocaleList(locale));
+    private static LocaleList getSystemLocales() {
+        LocaleList locales = Resources.getSystem().getConfiguration().getLocales();
+        if (locales != null && !locales.isEmpty()) {
+            return locales;
         }
+        return new LocaleList(Locale.getDefault());
+    }
+
+    private static Locale getSystemLocale() {
+        return getSystemLocales().get(0);
+    }
+
+    private static Context wrap(Context context, LocaleList locales) {
+        Configuration config = new Configuration(context.getResources().getConfiguration());
+        Locale.setDefault(locales.get(0));
+        config.setLocales(locales);
         Resources res = context.getResources();
         res.updateConfiguration(config, res.getDisplayMetrics());
         return context.createConfigurationContext(config);
