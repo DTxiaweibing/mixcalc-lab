@@ -994,8 +994,11 @@ public class MixCalcActivity extends BaseActivity {
             double totalFeed05 = 0;
             double totalFeed10 = 0;
             double totalWater = 0;
-            double totalAverageFeed = 0;
-            int validAverageCount = 0;
+            // 平均吃料只统计“行平均 > 0”的行：没填料、或只有发酵料且未参与算料的行走平均为 0，整行不参与。
+            // 分母是这些行的棚数，分子是 行平均 × 行棚数：普通行等价于 总料/总棚，
+            // 手改过平均的行则直接采用改后的平均（手改时料格也按这个平均重算过）。
+            double includedShedCount = 0;
+            double includedFeedTotal = 0;
 
             for (FeedData data : dataList) {
                 totalShedCount += data.getShedCount();
@@ -1006,11 +1009,11 @@ public class MixCalcActivity extends BaseActivity {
                 totalFeed10 += data.getFeed10();
                 totalWater += data.getWater();
 
-                // 使用正确的平均吃料计算方法
-                double avgValue = data.getAverage(fermentedIncludedInAverage);
-                if (avgValue > 0) {
-                    totalAverageFeed += avgValue;
-                    validAverageCount++;
+                double rowAverage = data.getAverage(fermentedIncludedInAverage);
+                double rowShedCount = data.getShedCount();
+                if (rowAverage > 0 && rowShedCount > 0) {
+                    includedShedCount += rowShedCount;
+                    includedFeedTotal += rowAverage * rowShedCount;
                 }
             }
 
@@ -1022,7 +1025,7 @@ public class MixCalcActivity extends BaseActivity {
             footerTotals.put("feed10", totalFeed10);
             footerTotals.put("water", totalWater);
             footerTotals.put("average_feed",
-                    validAverageCount > 0 ? totalAverageFeed / validAverageCount : 0);
+                    includedShedCount > 0 ? includedFeedTotal / includedShedCount : 0);
 
             updateErrorDisplay();
             if (table != null) {
