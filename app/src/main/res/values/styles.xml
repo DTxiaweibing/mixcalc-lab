@@ -6,7 +6,8 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
     <style name="AppTheme.NoWindowBackground" parent="AppTheme">
-        <item name="android:windowBackground">@null</item>
+        <!-- 保留主题名不改 manifest；透明窗口在 recreate 时会露出桌面，用和根布局一致的底色兜住 -->
+        <item name="android:windowBackground">#f5f5f5</item>
         <item name="android:statusBarColor">#1F6B30</item>
         <item name="android:navigationBarColor">#FFFFFF</item>
         <item name="android:windowLightStatusBar">false</item>

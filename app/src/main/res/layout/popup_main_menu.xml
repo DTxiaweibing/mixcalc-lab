@@ -8,14 +8,16 @@
     android:minWidth="140dp">
 
     <!--
-        表格行高 40dp：弹窗顶部贴标题下沿（=表格顶），行距按 40dp 走，
-        分隔线才能对齐表格横线（第 1 条 40、第 2 条 80、第 3 条 120）。
-        分隔线本身 1dp，占掉下一行 1dp，故第 2~4 项行高写 39dp，行距仍是 40dp。
+        正常字体下用 minHeight 保持 40dp 网格：弹窗顶部贴标题下沿（=表格顶），
+        分隔线对齐表格横线（第 1 条 40、第 2 条 80、第 3 条 120）。
+        分隔线本身 1dp，占掉下一行 1dp，故第 2~4 项 minHeight 写 39dp，行距仍是 40dp。
+        字体调大时高度改用 wrap_content，让文字完整显示，不再被固定行高裁掉。
     -->
     <TextView
         android:id="@+id/menu_item_quick_settings"
         android:layout_width="match_parent"
-        android:layout_height="40dp"
+        android:layout_height="wrap_content"
+        android:minHeight="40dp"
         android:text="@string/mix_menu_quick_settings"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -23,6 +25,8 @@
         android:textAlignment="center"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
         android:background="?attr/selectableItemBackground" />
 
     <View
@@ -34,7 +38,8 @@
     <TextView
         android:id="@+id/menu_item_privacy_policy"
         android:layout_width="match_parent"
-        android:layout_height="39dp"
+        android:layout_height="wrap_content"
+        android:minHeight="39dp"
         android:text="@string/mix_menu_privacy_policy"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -42,6 +47,8 @@
         android:textAlignment="center"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
         android:background="?attr/selectableItemBackground" />
 
     <View
@@ -52,7 +59,8 @@
     <TextView
         android:id="@+id/menu_item_user_agreement"
         android:layout_width="match_parent"
-        android:layout_height="39dp"
+        android:layout_height="wrap_content"
+        android:minHeight="39dp"
         android:text="@string/mix_menu_user_agreement"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -60,6 +68,8 @@
         android:textAlignment="center"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
         android:background="?attr/selectableItemBackground" />
 
     <View
@@ -70,7 +80,8 @@
     <TextView
         android:id="@+id/menu_item_help"
         android:layout_width="match_parent"
-        android:layout_height="39dp"
+        android:layout_height="wrap_content"
+        android:minHeight="39dp"
         android:text="@string/mix_menu_help"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -78,6 +89,8 @@
         android:textAlignment="center"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
         android:background="?attr/selectableItemBackground" />
 
     <View
@@ -88,7 +101,8 @@
     <TextView
         android:id="@+id/menu_item_language"
         android:layout_width="match_parent"
-        android:layout_height="39dp"
+        android:layout_height="wrap_content"
+        android:minHeight="39dp"
         android:text="@string/mix_menu_language"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -96,6 +110,8 @@
         android:textAlignment="center"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
         android:background="?attr/selectableItemBackground" />
 
     <View
@@ -106,12 +122,15 @@
     <TextView
         android:id="@+id/menu_item_version"
         android:layout_width="match_parent"
-        android:layout_height="39dp"
+        android:layout_height="wrap_content"
+        android:minHeight="39dp"
         android:textSize="18sp"
         android:textColor="#333333"
         android:gravity="center"
         android:textAlignment="center"
         android:paddingStart="12dp"
-        android:paddingEnd="12dp" />
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp" />
 
 </LinearLayout>

@@ -9,6 +9,7 @@ import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
 import android.text.SpannableString;
@@ -32,6 +33,7 @@ import android.widget.Toast;
 
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.shrimpfarm.app.BaseActivity;
@@ -317,6 +319,12 @@ public class MixCalcActivity extends BaseActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // API 35+ 强制 edge-to-edge：先把窗口设为 edge-to-edge，首帧就按 insets 给系统栏留白；
+        // 老系统仍由窗口自己让位，spacer 保持 0，避免重复留白。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        }
+
         try {
             setContentView(R.layout.activity_mix_calc);
             // 键盘弹起时把布局往上顶，让底部统计行跟着键盘上移
@@ -364,7 +372,9 @@ public class MixCalcActivity extends BaseActivity {
 
     // 系统栏留白：状态栏那块涂深绿、底部导航栏那块涂白，高度取 WindowInsets。
     // API 35+ 强制 edge-to-edge，内容会钻到系统栏底下，所以拿两块 spacer 显式让开；
-    // 老系统窗口自己已经让过了（根布局在 window 里 Y > 0），这时两块 spacer 归 0，别重复留。
+    // 老系统窗口自己已经让过了，这时两块 spacer 保持 0，别重复留。
+    // spacer 高度必须在这次 insets 回调里同步设好，不能 post：否则首帧仍是 0，
+    // 标题栏会先躲到状态栏下面再跳下来（recreate 时看起来就是闪一下）。
     private void setupSystemBarInsets() {
         final View root = findViewById(R.id.main_layout);
         final View statusSpacer = findViewById(R.id.status_bar_spacer);
@@ -372,6 +382,7 @@ public class MixCalcActivity extends BaseActivity {
         if (root == null || statusSpacer == null || navSpacer == null) {
             return;
         }
+        final boolean edgeToEdge = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM;
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, wInsets) -> {
             final Insets bars = wInsets.getInsets(
                     WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
@@ -380,13 +391,8 @@ public class MixCalcActivity extends BaseActivity {
             // 表格整体变矮 → 统计行跟着被推上来。
             final Insets ime = wInsets.getInsets(WindowInsetsCompat.Type.ime());
             final int bottomInset = Math.max(bars.bottom, ime.bottom);
-            v.post(() -> {
-                int[] loc = new int[2];
-                v.getLocationInWindow(loc);
-                boolean systemAlreadyInset = loc[1] > 0;
-                setSpacerHeight(statusSpacer, systemAlreadyInset ? 0 : bars.top);
-                setSpacerHeight(navSpacer, systemAlreadyInset ? 0 : bottomInset);
-            });
+            setSpacerHeight(statusSpacer, edgeToEdge ? bars.top : 0);
+            setSpacerHeight(navSpacer, edgeToEdge ? bottomInset : 0);
             return wInsets;
         });
         ViewCompat.requestApplyInsets(root);
@@ -396,9 +402,15 @@ public class MixCalcActivity extends BaseActivity {
         ViewGroup.LayoutParams lp = spacer.getLayoutParams();
         if (lp == null) {
             lp = new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, heightPx);
-        } else {
-            lp.height = heightPx;
+            spacer.setLayoutParams(lp);
+            return;
         }
+        // insets 可能被重复派发（弹窗/焦点变化）。高度没变就别再 setLayoutParams，
+        // 否则会白跑一次 measure/layout，表格的 clampOffsets 可能让内容闪一下。
+        if (lp.height == heightPx) {
+            return;
+        }
+        lp.height = heightPx;
         spacer.setLayoutParams(lp);
     }
 
@@ -2109,9 +2121,26 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
+    // 打开菜单/弹窗前先把正在编辑的格收掉、键盘收起。
+    // 否则弹窗抢焦点时 IME 再收，表格会在弹窗后面先缩一下，看起来就是左上角闪一下。
+    private void closeEditorAndIme() {
+        if (table != null) {
+            table.endEdit();
+        }
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            View decor = getWindow() == null ? null : getWindow().getDecorView();
+            if (decor != null) {
+                imm.hideSoftInputFromWindow(decor.getWindowToken(), 0);
+            }
+        }
+    }
+
     // 语言选择：单选列表 + 取消，选完存偏好并重建界面。
     private void showLanguageDialog() {
         try {
+            closeEditorAndIme();
+
             final String[] keys = {
                     com.shrimpfarm.app.LocaleManager.LANG_SYSTEM,
                     com.shrimpfarm.app.LocaleManager.LANG_ZH,
@@ -2152,7 +2181,12 @@ public class MixCalcActivity extends BaseActivity {
             dialog.getWindow().setLayout(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            // 关掉系统默认的对话框动画：华为上它的阴影/缩放会扫过下面露出的表格
+            dialog.getWindow().setWindowAnimations(0);
             dialog.show();
+            if (table != null) {
+                table.postInvalidateOnAnimation();
+            }
         } catch (Exception e) {
             Log.e(TAG, "显示语言选择异常: " + e.getMessage());
         }
@@ -2171,9 +2205,14 @@ public class MixCalcActivity extends BaseActivity {
 
     private void showMainMenu() {
         try {
+            // 菜单一弹出就抢焦点，先收掉编辑浮层和键盘，避免表格随后才缩一下。
+            closeEditorAndIme();
+
             View popupView = getLayoutInflater().inflate(R.layout.popup_main_menu, null);
 
             final PopupWindow popup = new PopupWindow(popupView);
+            // 关掉菜单窗口的进出动画，避免和后续语言弹窗同帧切换时带出表格抖动
+            popup.setAnimationStyle(0);
             popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
             popup.setOutsideTouchable(true);
             popup.setFocusable(true);
@@ -2183,11 +2222,13 @@ public class MixCalcActivity extends BaseActivity {
             if (isTabletMode) {
                 popupView.findViewById(R.id.menu_item_quick_settings).setVisibility(View.GONE);
                 popupView.findViewById(R.id.menu_divider_quick).setVisibility(View.GONE);
-                // 首项被隐藏后由隐私政策顶上：行高补回 40dp，分隔线才落在表格 40/80/120 网格上
+                // 首项被隐藏后由隐私政策顶上：最小高度补回 40dp，分隔线才落在表格 40/80/120 网格上；
+                // 字体放大时仍用 wrap_content，让文字能撑高
                 View privacyItem = popupView.findViewById(R.id.menu_item_privacy_policy);
                 ViewGroup.LayoutParams lp = privacyItem.getLayoutParams();
-                lp.height = dpToPx(40);
+                lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
                 privacyItem.setLayoutParams(lp);
+                privacyItem.setMinimumHeight(dpToPx(40));
             } else {
                 popupView.findViewById(R.id.menu_item_quick_settings).setOnClickListener(v -> {
                     popup.dismiss();
@@ -2209,19 +2250,35 @@ public class MixCalcActivity extends BaseActivity {
             });
             popupView.findViewById(R.id.menu_item_language).setOnClickListener(v -> {
                 popup.dismiss();
-                showLanguageDialog();
+                // 菜单窗口先移除，下一帧再弹语言框：两个窗口同一帧切换时，
+                // 菜单盖住的那块表格会重新露出，华为上会看到左上角抖一下。
+                View main = findViewById(R.id.main_layout);
+                if (main != null) {
+                    main.post(() -> {
+                        if (!isFinishing() && !isDestroyed()) {
+                            showLanguageDialog();
+                        }
+                    });
+                } else {
+                    showLanguageDialog();
+                }
             });
 
             // 版本号：取构建配置里的真实 versionName（app/build.gradle）
             TextView versionTv = popupView.findViewById(R.id.menu_item_version);
             versionTv.setText(getString(R.string.mix_menu_version_format, BuildConfig.VERSION_NAME));
 
-            // 宽度：手机 1/3 屏宽，平板 1/4 屏宽（优先取主布局实际宽度，分屏下才准）
+            // 宽度：正常字体下手机 1/3、平板 1/4；字体放大时按 fontScale 加宽（最多屏幕 60%），
+            // 避免“版本:v0.3.1”在窄菜单里被挤成每行一个字。高度由 wrap_content 撑开。
             View mainLayout = findViewById(R.id.main_layout);
             int totalWidth = mainLayout != null && mainLayout.getWidth() > 0
                     ? mainLayout.getWidth()
                     : getResources().getDisplayMetrics().widthPixels;
-            popup.setWidth(isTabletMode ? totalWidth / 4 : totalWidth / 3);
+            float fontScale = Math.max(1f, getResources().getConfiguration().fontScale);
+            int baseWidth = isTabletMode ? totalWidth / 4 : totalWidth / 3;
+            int maxWidth = (int) (totalWidth * 0.6f);
+            int popupWidth = Math.min(maxWidth, Math.max(baseWidth, (int) (baseWidth * fontScale)));
+            popup.setWidth(popupWidth);
             popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
 
             showPopupUnderTitleBar(popup);
