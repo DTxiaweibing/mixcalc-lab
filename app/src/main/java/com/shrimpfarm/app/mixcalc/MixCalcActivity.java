@@ -1193,58 +1193,63 @@ public class MixCalcActivity extends BaseActivity {
     // 表头弹窗：PopupWindow 贴在被点表头格左下角，位置跟"换料比例"弹窗一样。
     // 用 PopupWindow 而不是 Dialog，是因为 Dialog 的窗口默认 gravity 是 CENTER，
     // 改成 NO_GRAVITY 还是会被系统重新居中，贴不稳格子。
+    /** 构建统一列表弹窗（圆角 + 分隔线 + 40dp 行），返回未显示的实例。 */
+    private PopupWindow createListPopup(String title, String[] items,
+                                        final DialogInterface.OnClickListener listener) {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setBackgroundResource(R.drawable.bg_dialog);
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText(title);
+        tvTitle.setTextSize(18);
+        tvTitle.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
+        tvTitle.setTextColor(0xFF000000);
+        tvTitle.setGravity(Gravity.CENTER);
+        tvTitle.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(12));
+        container.addView(tvTitle);
+        container.addView(createDivider());
+
+        final PopupWindow popup = new PopupWindow(container);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+        popup.setOutsideTouchable(true);
+        popup.setFocusable(true);
+        popup.setElevation(10);
+
+        for (int i = 0; i < items.length; i++) {
+            final int index = i;
+            TextView itemTv = new TextView(this);
+            itemTv.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(40)));
+            itemTv.setText(items[i]);
+            itemTv.setTextSize(15);
+            itemTv.setTextColor(0xFF333333);
+            itemTv.setGravity(Gravity.CENTER);
+            itemTv.setClickable(true);
+            itemTv.setFocusable(true);
+            itemTv.setOnClickListener(v -> {
+                popup.dismiss();
+                if (listener != null) {
+                    listener.onClick(null, index);
+                }
+            });
+            container.addView(itemTv);
+            if (i < items.length - 1) {
+                container.addView(createDivider());
+            }
+        }
+
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        popup.setWidth(Math.min(dm.widthPixels, dpToPx(180)));
+        popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+        return popup;
+    }
+
+    /** 锚定在指定格子下方显示（水比 / 发酵料 / 列操作）。 */
     private void showAnchoredListDialog(String title, String[] items, Rect cellRect,
                                         final DialogInterface.OnClickListener listener) {
         try {
-            LinearLayout container = new LinearLayout(this);
-            container.setOrientation(LinearLayout.VERTICAL);
-            container.setBackgroundResource(R.drawable.bg_dialog);
-
-            TextView tvTitle = new TextView(this);
-            tvTitle.setText(title);
-            tvTitle.setTextSize(18);
-            tvTitle.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
-            tvTitle.setTextColor(0xFF000000);
-            tvTitle.setGravity(Gravity.CENTER);
-            tvTitle.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(12));
-            container.addView(tvTitle);
-
-            container.addView(createDivider());
-
-            final PopupWindow popup = new PopupWindow(container);
-            popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-            popup.setOutsideTouchable(true);
-            popup.setFocusable(true);
-            popup.setElevation(10);
-
-            for (int i = 0; i < items.length; i++) {
-                final int index = i;
-                TextView itemTv = new TextView(this);
-                itemTv.setLayoutParams(new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(40)));
-                itemTv.setText(items[i]);
-                itemTv.setTextSize(15);
-                itemTv.setTextColor(0xFF333333);
-                itemTv.setGravity(Gravity.CENTER);
-                itemTv.setClickable(true);
-                itemTv.setFocusable(true);
-                itemTv.setOnClickListener(v -> {
-                    popup.dismiss();
-                    if (listener != null) {
-                        // DialogInterface 参数传 null：各调用方都不使用该参数（关闭由 PopupWindow 负责）
-                        listener.onClick(null, index);
-                    }
-                });
-                container.addView(itemTv);
-                if (i < items.length - 1) {
-                    container.addView(createDivider());
-                }
-            }
-
-            DisplayMetrics dm = getResources().getDisplayMetrics();
-            popup.setWidth(Math.min(dm.widthPixels, dpToPx(180)));
-            popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
-
+            PopupWindow popup = createListPopup(title, items, listener);
             int[] loc = new int[2];
             if (table != null) {
                 table.getLocationOnScreen(loc);
@@ -1254,6 +1259,18 @@ public class MixCalcActivity extends BaseActivity {
             popup.showAtLocation(table, Gravity.NO_GRAVITY, x, y);
         } catch (Exception e) {
             Log.e(TAG, "showAnchoredListDialog: " + e.getMessage(), e);
+        }
+    }
+
+    /** 屏幕居中显示（批次选择等不依附格子的场景）。 */
+    private void showCenteredListDialog(String title, String[] items,
+                                        final DialogInterface.OnClickListener listener) {
+        try {
+            PopupWindow popup = createListPopup(title, items, listener);
+            View anchor = findViewById(R.id.main_layout);
+            popup.showAtLocation(anchor, Gravity.CENTER, 0, 0);
+        } catch (Exception e) {
+            Log.e(TAG, "showCenteredListDialog: " + e.getMessage(), e);
         }
     }
 
@@ -1864,7 +1881,7 @@ public class MixCalcActivity extends BaseActivity {
                     : batchLabel(i);
         }
 
-        showAnchoredListDialog(getString(R.string.mix_batch_dialog_title), labels, null,
+        showCenteredListDialog(getString(R.string.mix_batch_dialog_title), labels,
                 (dialog, which) -> switchBatch(which));
     }
     // 语言选择：单选列表 + 取消，选完存偏好并重建界面。
