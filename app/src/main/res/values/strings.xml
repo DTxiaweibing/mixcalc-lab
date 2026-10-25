@@ -107,4 +107,7 @@
     <string name="privacy_btn_disagree">拒绝</string>
     <string name="privacy_btn_agree">同意</string>
     <string name="privacy_consent_load_fail">隐私政策与使用协议内容加载失败，请重新打开应用</string>
-</resources>
+    <string name="mix_menu_batch">批次切换</string>
+    <string name="mix_batch_dialog_title">选择批次</string>
+    <string name="mix_batch_01">批次01</string>
+    <string name="mix_batch_02">批次02</string></resources>

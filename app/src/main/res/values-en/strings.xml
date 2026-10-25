@@ -107,4 +107,7 @@
     <string name="privacy_btn_disagree">Decline</string>
     <string name="privacy_btn_agree">Agree</string>
     <string name="privacy_consent_load_fail">Failed to load the privacy policy and user agreement. Please reopen the app.</string>
-</resources>
+    <string name="mix_menu_batch">Switch batch</string>
+    <string name="mix_batch_dialog_title">Select batch</string>
+    <string name="mix_batch_01">Batch 01</string>
+    <string name="mix_batch_02">Batch 02</string></resources>

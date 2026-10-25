@@ -36,6 +36,26 @@
         android:background="#E0E0E0" />
 
     <TextView
+        android:id="@+id/menu_item_batch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="39dp"
+        android:text="@string/mix_menu_batch"
+        android:textSize="18sp"
+        android:textColor="#333333"
+        android:gravity="center"
+        android:textAlignment="center"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:background="?attr/selectableItemBackground" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#E0E0E0" />
+    <TextView
         android:id="@+id/menu_item_privacy_policy"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

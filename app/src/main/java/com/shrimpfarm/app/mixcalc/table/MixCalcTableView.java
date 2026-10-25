@@ -121,6 +121,13 @@ public class MixCalcTableView extends ViewGroup {
         }
         requestRebuild();
     }
+    /** 切换批次后把横向/纵向滚动位置复位。 */
+    public void resetScroll() {
+        offsetX = 0;
+        offsetY = 0;
+        scroller.abortAnimation();
+        invalidate();
+    }
 
     public void setCellTextProvider(CellTextProvider provider) {
         this.textProvider = provider;

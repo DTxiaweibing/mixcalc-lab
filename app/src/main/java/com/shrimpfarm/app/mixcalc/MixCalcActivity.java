@@ -1,5 +1,6 @@
 package com.shrimpfarm.app.mixcalc;
 
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -12,8 +13,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
-import android.text.SpannableString;
 import android.text.Spanned;
+import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
 import android.util.DisplayMetrics;
@@ -41,6 +42,7 @@ import com.shrimpfarm.app.BuildConfig;
 import com.shrimpfarm.app.R;
 import com.shrimpfarm.app.mixcalc.model.FeedData;
 import com.shrimpfarm.app.mixcalc.prefs.MixCalcPrefs;
+import com.shrimpfarm.app.mixcalc.model.Batch;
 import com.shrimpfarm.app.mixcalc.table.TabletLayout;
 import com.shrimpfarm.app.mixcalc.table.CellStyle;
 import com.shrimpfarm.app.mixcalc.table.CellTextProvider;
@@ -71,6 +73,8 @@ public class MixCalcActivity extends BaseActivity {
 
     // 数据
     private List<FeedData> dataList;
+    private final List<Batch> batches = new ArrayList<>();
+    private int currentBatchIndex = 0;
     private int globalWaterPercentage = 20;
 
     // 发酵料计算标志
@@ -415,9 +419,7 @@ public class MixCalcActivity extends BaseActivity {
 
     // 快速加载设置
     private void loadQuickSettings() {
-        globalWaterPercentage = MixCalcPrefs.getWaterPercentage(this);
-        fermentedIncludedInWater = MixCalcPrefs.isFermentedInWater(this);
-        fermentedIncludedInAverage = MixCalcPrefs.isFermentedInAverage(this);
+        // 水比与发酵开关跟随批次，见 bindCurrentBatch()
     }
 
     private boolean isTabletDevice(Context context) {
@@ -426,9 +428,15 @@ public class MixCalcActivity extends BaseActivity {
 
     // 从 SharedPreferences 同步加载已保存数据（数据量小，主线程解析）
     private void loadSavedData() {
-        MixCalcPrefs.loadData(this, dataList, TOTAL_ROWS,
-                globalWaterPercentage, fermentedIncludedInWater,
-                fermentedIncludedInAverage, FIRST_ROW);
+        List<Batch> loaded = MixCalcPrefs.loadBatches(this, TOTAL_ROWS);
+        batches.clear();
+        batches.addAll(loaded);
+        currentBatchIndex = MixCalcPrefs.loadActiveIndex(this);
+        if (currentBatchIndex < 0 || currentBatchIndex >= batches.size()) {
+            currentBatchIndex = 0;
+        }
+        bindCurrentBatch();
+        recalcBatch(batches.get(currentBatchIndex));
         recomputeFirstRowRemainder();
     }
 
@@ -897,15 +905,12 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     private void initData() {
-        try {
-            dataList = new ArrayList<FeedData>();
-
-            for (int i = 0; i < TOTAL_ROWS; i++) {
-                dataList.add(new FeedData());
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "initData异常: " + e.getMessage());
+        batches.clear();
+        for (int i = 0; i < MixCalcPrefs.BATCH_COUNT; i++) {
+            batches.add(new Batch(TOTAL_ROWS));
         }
+        currentBatchIndex = 0;
+        bindCurrentBatch();
     }
 
     // 按 columnIds、adaptiveColumnWidths、可见和固定状态，重搭引擎的列配置
@@ -962,6 +967,7 @@ public class MixCalcActivity extends BaseActivity {
             if (table != null) {
                 table.notifyAllChanged();
             }
+            updateBatchTitle();
             updateFooterRow();
         } catch (Exception e) {
             Log.e(TAG, "重建完整表格异常: " + e.getMessage(), e);
@@ -1012,22 +1018,108 @@ public class MixCalcActivity extends BaseActivity {
 
     // 保存全局水百分比
     private void saveGlobalWaterPercentage() {
-        MixCalcPrefs.saveWaterPercentage(this, globalWaterPercentage);
+        saveAllData();
     }
 
     // 保存发酵料参与水分计算设置
     private void saveFermentedIncludedInWater() {
-        MixCalcPrefs.saveFermentedWater(this, fermentedIncludedInWater);
+        saveAllData();
     }
 
     // 保存发酵料参与平均吃料计算设置
     private void saveFermentedIncludedInAverage() {
-        MixCalcPrefs.saveFermentedAverage(this, fermentedIncludedInAverage);
+        saveAllData();
     }
 
     // 保存所有数据
+    // ==================== 批次 ====================
+
+    /** 把当前批次的设置与行数据绑定到视图层字段。 */
+    private void bindCurrentBatch() {
+        if (batches.isEmpty()) {
+            return;
+        }
+        Batch batch = batches.get(currentBatchIndex);
+        dataList = batch.getRows();
+        globalWaterPercentage = batch.getWaterPercentage();
+        fermentedIncludedInWater = batch.isFermentedInWater();
+        fermentedIncludedInAverage = batch.isFermentedInAverage();
+        if (table != null) {
+            table.setRows(dataList);
+        }
+        updateBatchTitle();
+    }
+
+    /** 把视图层的水比/发酵开关写回当前批次。 */
+    private void pushSettingsToBatch() {
+        if (batches.isEmpty()) {
+            return;
+        }
+        Batch batch = batches.get(currentBatchIndex);
+        batch.setWaterPercentage(globalWaterPercentage);
+        batch.setFermentedInWater(fermentedIncludedInWater);
+        batch.setFermentedInAverage(fermentedIncludedInAverage);
+    }
+
+    /** 按批次自己的设置重算除首行外的所有行。 */
+    private void recalcBatch(Batch batch) {
+        for (int i = 0; i < batch.getRows().size(); i++) {
+            if (i != FIRST_ROW) {
+                batch.getRows().get(i).updateAllCalculations(
+                        batch.getWaterPercentage(),
+                        batch.isFermentedInWater(),
+                        batch.isFermentedInAverage());
+            }
+        }
+    }
+
+    /** 切换批次：先提交编辑并保存，再换数据源重建。 */
+    private void switchBatch(int index) {
+        if (index == currentBatchIndex || index < 0 || index >= batches.size()) {
+            return;
+        }
+        closeEditorAndIme();
+        pushSettingsToBatch();
+        saveAllData();
+
+        currentBatchIndex = index;
+        bindCurrentBatch();
+        recalcBatch(batches.get(currentBatchIndex));
+        recomputeFirstRowRemainder();
+        rebuildCompleteTable();
+        if (table != null) {
+            table.resetScroll();
+        }
+        saveAllData();
+    }
+
+    /** 标题里用的两位批次号。 */
+    private String batchNumber(int index) {
+        return index == 0 ? "01" : "02";
+    }
+
+    private String batchLabel(int index) {
+        return getString(index == 0 ? R.string.mix_batch_01 : R.string.mix_batch_02);
+    }
+
+    /** 标题栏：原标题 + 当前批次编号。 */
+    /** 标题栏：原标题 + 当前批次编号（批次号缩小，避免标题被截断）。 */
+    /** 标题栏：原标题 + 批次号（01 / 02）。 */
+    /** 标题栏：批次 01 保持原标题，批次 02 追加 02。 */
+    private void updateBatchTitle() {
+        TextView title = findViewById(R.id.toolbar);
+        if (title == null || batches.isEmpty()) {
+            return;
+        }
+        String base = getString(R.string.title_mix_calculator);
+        title.setText(currentBatchIndex == 0
+                ? base
+                : base + " " + batchNumber(currentBatchIndex));
+    }
+
     private void saveAllData() {
-        MixCalcPrefs.saveData(this, dataList);
+        pushSettingsToBatch();
+        MixCalcPrefs.saveBatches(this, batches, currentBatchIndex);
     }
 
     @android.annotation.SuppressLint("InflateParams")
@@ -1736,6 +1828,19 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
+    // 批次选择：两个固定批次，当前批次预先选中。切换时自动提交未完成的编辑。
+    private void showBatchDialog() {
+        closeEditorAndIme();
+        final String[] labels = {getString(R.string.mix_batch_01), getString(R.string.mix_batch_02)};
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.mix_batch_dialog_title)
+                .setSingleChoiceItems(labels, currentBatchIndex, (dialog, which) -> {
+                    dialog.dismiss();
+                    switchBatch(which);
+                })
+                .setNegativeButton(R.string.btn_cancel, null)
+                .show();
+    }
     // 语言选择：单选列表 + 取消，选完存偏好并重建界面。
     private void showLanguageDialog() {
         try {
@@ -1836,7 +1941,10 @@ public class MixCalcActivity extends BaseActivity {
                 });
             }
 
-            popupView.findViewById(R.id.menu_item_privacy_policy).setOnClickListener(v -> {
+            popupView.findViewById(R.id.menu_item_batch).setOnClickListener(v -> {
+                popup.dismiss();
+                showBatchDialog();
+            });            popupView.findViewById(R.id.menu_item_privacy_policy).setOnClickListener(v -> {
                 popup.dismiss();
                 openAssetPage("privacy.html");
             });
