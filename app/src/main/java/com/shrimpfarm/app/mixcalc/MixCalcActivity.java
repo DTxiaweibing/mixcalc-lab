@@ -9,6 +9,8 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.util.TypedValue;
+import android.graphics.Paint;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -355,6 +357,7 @@ public class MixCalcActivity extends BaseActivity {
             // 加载已保存数据并计算
             loadSavedData();
             updateAllCalculations();
+            rebuildCompleteTable();
 
         } catch (Exception e) {
             Log.e(TAG, "启动异常: " + e.getMessage(), e);
@@ -1962,6 +1965,7 @@ public class MixCalcActivity extends BaseActivity {
                 });
             }
 
+            fitMenuRowHeights(popupView);
             popupView.findViewById(R.id.menu_item_batch).setOnClickListener(v -> {
                 popup.dismiss();
                 showBatchDialog();
@@ -2287,6 +2291,41 @@ public class MixCalcActivity extends BaseActivity {
     // 把弹窗顶边贴到标题栏下沿、左边缘跟表格对齐，手机平板通用。
     // 用屏幕坐标求差，因为 showAtLocation 的 y 是相对 main_layout 的，
     // 平板 content 被系统栏内缩时会少算偏移，菜单就顶到标题栏上去了。
+    /**
+     * 菜单行高固定为 40dp 网格：首行 40dp，其余 39dp + 1dp 分隔线。
+     * 系统字体放大时按可用高度回缩字号，避免行被撑高、分隔线与表格横线错位。
+     */
+    private void fitMenuRowHeights(View popupView) {
+        int[] ids = {
+                R.id.menu_item_quick_settings, R.id.menu_item_batch,
+                R.id.menu_item_privacy_policy, R.id.menu_item_user_agreement,
+                R.id.menu_item_help, R.id.menu_item_language, R.id.menu_item_version
+        };
+        boolean firstVisible = true;
+        for (int id : ids) {
+            View view = popupView.findViewById(id);
+            if (!(view instanceof TextView) || view.getVisibility() != View.VISIBLE) {
+                continue;
+            }
+            TextView item = (TextView) view;
+            int targetPx = dpToPx(firstVisible ? 40 : 39);
+            firstVisible = false;
+
+            ViewGroup.LayoutParams params = item.getLayoutParams();
+            params.height = targetPx;
+            item.setLayoutParams(params);
+            item.setIncludeFontPadding(false);
+            item.setMinHeight(0);
+
+            int available = targetPx - item.getPaddingTop() - item.getPaddingBottom();
+            Paint.FontMetrics metrics = item.getPaint().getFontMetrics();
+            float textHeight = metrics.descent - metrics.ascent;
+            if (available > 0 && textHeight > available) {
+                item.setTextSize(TypedValue.COMPLEX_UNIT_PX, item.getTextSize() * available / textHeight);
+            }
+        }
+    }
+
     private void showPopupUnderTitleBar(PopupWindow popup) {
         View menuBtn = findViewById(R.id.btn_menu);
         View titleBar = findViewById(R.id.title_bar);

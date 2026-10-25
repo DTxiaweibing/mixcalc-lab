@@ -8,16 +8,16 @@
     android:minWidth="140dp">
 
     <!--
-        正常字体下用 minHeight 保持 40dp 网格：弹窗顶部贴标题下沿（=表格顶），
-        分隔线对齐表格横线（第 1 条 40、第 2 条 80、第 3 条 120）。
-        分隔线本身 1dp，占掉下一行 1dp，故第 2~4 项 minHeight 写 39dp，行距仍是 40dp。
-        字体调大时高度改用 wrap_content，让文字完整显示，不再被固定行高裁掉。
+        行高由 MixCalcActivity.fitMenuRowHeights() 统一计算：首行 40dp，其余 39dp，
+        加上 1dp 分隔线后行距正好 40dp，与表格行高对齐。
+        系统字体放大时回缩字号而不是撑高行，保证分隔线始终落在表格横线网格上。
     -->
     <TextView
         android:id="@+id/menu_item_quick_settings"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="40dp"
+        android:includeFontPadding="false"
         android:text="@string/mix_menu_quick_settings"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -40,6 +40,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="39dp"
+        android:includeFontPadding="false"
         android:text="@string/mix_menu_batch"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -60,6 +61,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="39dp"
+        android:includeFontPadding="false"
         android:text="@string/mix_menu_privacy_policy"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -81,6 +83,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="39dp"
+        android:includeFontPadding="false"
         android:text="@string/mix_menu_user_agreement"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -102,6 +105,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="39dp"
+        android:includeFontPadding="false"
         android:text="@string/mix_menu_help"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -123,6 +127,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="39dp"
+        android:includeFontPadding="false"
         android:text="@string/mix_menu_language"
         android:textSize="18sp"
         android:textColor="#333333"
@@ -144,6 +149,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="39dp"
+        android:includeFontPadding="false"
         android:textSize="18sp"
         android:textColor="#333333"
         android:gravity="center"
