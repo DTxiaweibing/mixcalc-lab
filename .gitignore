@@ -19,3 +19,8 @@ app/src/main/assets/sherpa_models/
 
 # 软著申请材料：含个人身份信息与大体积二进制，仅本地保留
 copyright/
+# 签名配置与密钥库：绝不入库
+keystore.properties
+*.jks
+*.keystore
+*.p12

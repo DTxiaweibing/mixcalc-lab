@@ -1,5 +1,17 @@
 apply plugin: 'com.android.application'
 
+// 签名配置从仓库外的 keystore.properties 读取；文件不存在时 release 构建保持未签名，
+// 这样别人拉代码也能正常 assembleDebug，不会因为缺密钥而失败。
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { stream ->
+        // 路径可能含中文，按 UTF-8 读取，避免 Properties 默认 ISO-8859-1 乱码
+        keystoreProps.load(new InputStreamReader(stream, 'UTF-8'))
+    }
+}
+def hasSigningConfig = keystorePropsFile.exists() && keystoreProps['storeFile']
+
 android {
     compileSdkVersion 36
 
@@ -19,9 +31,22 @@ android {
     buildFeatures {
         buildConfig true
     }
+    signingConfigs {
+        release {
+            if (hasSigningConfig) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            if (hasSigningConfig) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
