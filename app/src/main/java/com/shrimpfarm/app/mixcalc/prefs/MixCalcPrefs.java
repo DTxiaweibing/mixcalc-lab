@@ -96,6 +96,18 @@ public final class MixCalcPrefs {
                 Log.e(TAG, "迁移旧数据异常", e);
             }
         }
+        // 旧版的列可见性/冻结是全局的，迁移时归入批次 01
+        for (String key : p.getAll().keySet()) {
+            Object value = p.getAll().get(key);
+            if (!(value instanceof Boolean)) {
+                continue;
+            }
+            if (key.startsWith(KEY_COLUMN_VISIBILITY)) {
+                first.getColumnVisibility().put(key.substring(KEY_COLUMN_VISIBILITY.length()), (Boolean) value);
+            } else if (key.startsWith(KEY_FIXED_COLUMN)) {
+                first.getColumnFixed().put(key.substring(KEY_FIXED_COLUMN.length()), (Boolean) value);
+            }
+        }
         first.setWaterPercentage(p.getInt(KEY_LEGACY_WATER, 20));
         first.setFermentedInWater(p.getBoolean(KEY_LEGACY_FERMENTED_WATER, false));
         first.setFermentedInAverage(p.getBoolean(KEY_LEGACY_FERMENTED_AVERAGE, false));
@@ -128,43 +140,6 @@ public final class MixCalcPrefs {
         return prefs(context).getInt(KEY_ACTIVE_BATCH, 0);
     }
 
-    public static void loadColumnVisibility(Context context, String[] columnIds,
-                                            boolean forceVisible, Map<String, Boolean> out) {
-        SharedPreferences p = prefs(context);
-        for (int i = 1; i < columnIds.length; i++) {
-            String id = columnIds[i];
-            out.put(id, forceVisible || p.getBoolean(KEY_COLUMN_VISIBILITY + id, true));
-        }
-    }
-
-    public static void saveColumnVisibility(Context context, String[] columnIds,
-                                            Map<String, Boolean> map) {
-        SharedPreferences.Editor editor = prefs(context).edit();
-        for (int i = 1; i < columnIds.length; i++) {
-            String id = columnIds[i];
-            editor.putBoolean(KEY_COLUMN_VISIBILITY + id, Boolean.TRUE.equals(map.get(id)));
-        }
-        editor.apply();
-    }
-
-    public static void loadColumnFixedState(Context context, String[] columnIds,
-                                            Map<String, Boolean> out) {
-        SharedPreferences p = prefs(context);
-        for (int i = 1; i < columnIds.length; i++) {
-            String id = columnIds[i];
-            out.put(id, p.getBoolean(KEY_FIXED_COLUMN + id, false));
-        }
-    }
-
-    public static void saveColumnFixedState(Context context, String[] columnIds,
-                                            Map<String, Boolean> map) {
-        SharedPreferences.Editor editor = prefs(context).edit();
-        for (int i = 1; i < columnIds.length; i++) {
-            String id = columnIds[i];
-            editor.putBoolean(KEY_FIXED_COLUMN + id, Boolean.TRUE.equals(map.get(id)));
-        }
-        editor.apply();
-    }
 
     public static int getPrivacyAgreedVersion(Context context) {
         return prefs(context).getInt(KEY_PRIVACY_AGREED, 0);

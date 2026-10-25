@@ -1001,19 +1001,28 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     private void loadColumnVisibility() {
-        MixCalcPrefs.loadColumnVisibility(this, columnIds, isTabletDevice(this), columnVisibility);
+        boolean forceVisible = isTabletDevice(this);
+        for (int i = 0; i < columnIds.length; i++) {
+            String id = columnIds[i];
+            Boolean stored = columnVisibility.get(id);
+            columnVisibility.put(id, forceVisible || stored == null || stored);
+        }
     }
 
     private void loadColumnFixedState() {
-        MixCalcPrefs.loadColumnFixedState(this, columnIds, columnFixed);
+        for (int i = 0; i < columnIds.length; i++) {
+            String id = columnIds[i];
+            Boolean stored = columnFixed.get(id);
+            columnFixed.put(id, stored != null ? stored : "seq".equals(id));
+        }
     }
 
     private void saveColumnVisibility() {
-        MixCalcPrefs.saveColumnVisibility(this, columnIds, columnVisibility);
+        saveAllData();
     }
 
     private void saveColumnFixedState() {
-        MixCalcPrefs.saveColumnFixedState(this, columnIds, columnFixed);
+        saveAllData();
     }
 
     // 保存全局水百分比
@@ -1035,6 +1044,7 @@ public class MixCalcActivity extends BaseActivity {
     // ==================== 批次 ====================
 
     /** 把当前批次的设置与行数据绑定到视图层字段。 */
+    /** 把当前批次的设置、列配置与行数据绑定到视图层字段。 */
     private void bindCurrentBatch() {
         if (batches.isEmpty()) {
             return;
@@ -1044,6 +1054,12 @@ public class MixCalcActivity extends BaseActivity {
         globalWaterPercentage = batch.getWaterPercentage();
         fermentedIncludedInWater = batch.isFermentedInWater();
         fermentedIncludedInAverage = batch.isFermentedInAverage();
+        columnVisibility.clear();
+        columnVisibility.putAll(batch.getColumnVisibility());
+        columnFixed.clear();
+        columnFixed.putAll(batch.getColumnFixed());
+        loadColumnVisibility();
+        loadColumnFixedState();
         if (table != null) {
             table.setRows(dataList);
         }
@@ -1051,6 +1067,7 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     /** 把视图层的水比/发酵开关写回当前批次。 */
+    /** 把视图层的设置与列配置写回当前批次。 */
     private void pushSettingsToBatch() {
         if (batches.isEmpty()) {
             return;
@@ -1059,6 +1076,10 @@ public class MixCalcActivity extends BaseActivity {
         batch.setWaterPercentage(globalWaterPercentage);
         batch.setFermentedInWater(fermentedIncludedInWater);
         batch.setFermentedInAverage(fermentedIncludedInAverage);
+        batch.getColumnVisibility().clear();
+        batch.getColumnVisibility().putAll(columnVisibility);
+        batch.getColumnFixed().clear();
+        batch.getColumnFixed().putAll(columnFixed);
     }
 
     /** 按批次自己的设置重算除首行外的所有行。 */
