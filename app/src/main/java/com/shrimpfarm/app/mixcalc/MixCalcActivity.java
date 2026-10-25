@@ -1869,20 +1869,28 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 批次选择：两个固定批次，当前批次预先选中。切换时自动提交未完成的编辑。
-    // 批次选择：当前批次后面打勾，点选即切换（切换前自动提交未完成的编辑）。
-    // 批次选择：复用项目统一的圆角列表弹窗，当前批次后打勾。
-    private void showBatchDialog() {
-        closeEditorAndIme();
+    // 批次子菜单：贴着菜单右侧展开，顶边与"批次切换"行对齐；选中后菜单一起关闭。
+    private void showBatchPopup(View anchorRow, final PopupWindow menuPopup) {
         String[] labels = new String[MixCalcPrefs.BATCH_COUNT];
         for (int i = 0; i < labels.length; i++) {
             labels[i] = i == currentBatchIndex
                     ? getString(R.string.mix_batch_selected, batchLabel(i))
                     : batchLabel(i);
         }
+        PopupWindow popup = createListPopup(getString(R.string.mix_batch_dialog_title), labels,
+                (dialog, which) -> {
+                    menuPopup.dismiss();
+                    switchBatch(which);
+                });
 
-        showCenteredListDialog(getString(R.string.mix_batch_dialog_title), labels,
-                (dialog, which) -> switchBatch(which));
+        int[] loc = new int[2];
+        anchorRow.getLocationOnScreen(loc);
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int width = Math.min(dm.widthPixels, dpToPx(180));
+        int x = Math.min(loc[0] + anchorRow.getWidth(), dm.widthPixels - width);
+        int y = loc[1];
+        View anchor = findViewById(R.id.main_layout);
+        popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y);
     }
     // 语言选择：单选列表 + 取消，选完存偏好并重建界面。
     private void showLanguageDialog() {
@@ -1966,17 +1974,10 @@ public class MixCalcActivity extends BaseActivity {
             popup.setFocusable(true);
             popup.setElevation(10);
 
-            // 快捷设置：平板不显示
+            // 快捷设置：平板不显示（隐藏后由批次行顶上，行高统一由 fitMenuRowHeights 处理）
             if (isTabletMode) {
                 popupView.findViewById(R.id.menu_item_quick_settings).setVisibility(View.GONE);
                 popupView.findViewById(R.id.menu_divider_quick).setVisibility(View.GONE);
-                // 首项被隐藏后由隐私政策顶上：最小高度补回 40dp，分隔线才落在表格 40/80/120 网格上；
-                // 字体放大时仍用 wrap_content，让文字能撑高
-                View privacyItem = popupView.findViewById(R.id.menu_item_privacy_policy);
-                ViewGroup.LayoutParams lp = privacyItem.getLayoutParams();
-                lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-                privacyItem.setLayoutParams(lp);
-                privacyItem.setMinimumHeight(dpToPx(40));
             } else {
                 popupView.findViewById(R.id.menu_item_quick_settings).setOnClickListener(v -> {
                     popup.dismiss();
@@ -1985,10 +1986,12 @@ public class MixCalcActivity extends BaseActivity {
             }
 
             fitMenuRowHeights(popupView);
-            popupView.findViewById(R.id.menu_item_batch).setOnClickListener(v -> {
-                popup.dismiss();
-                showBatchDialog();
-            });            popupView.findViewById(R.id.menu_item_privacy_policy).setOnClickListener(v -> {
+
+            // 批次切换：菜单不关闭，在"批次切换"行右侧展开子菜单
+            final View batchRow = popupView.findViewById(R.id.menu_item_batch);
+            batchRow.setOnClickListener(v -> showBatchPopup(batchRow, popup));
+
+            popupView.findViewById(R.id.menu_item_privacy_policy).setOnClickListener(v -> {
                 popup.dismiss();
                 openAssetPage("privacy.html");
             });
@@ -2021,7 +2024,7 @@ public class MixCalcActivity extends BaseActivity {
             versionTv.setText(getString(R.string.mix_menu_version_format, BuildConfig.VERSION_NAME));
 
             // 宽度：正常字体下手机 1/3、平板 1/4；字体放大时按 fontScale 加宽（最多屏幕 60%），
-            // 避免“版本:v0.3.1”在窄菜单里被挤成每行一个字。高度由 wrap_content 撑开。
+            // 避免版本号在窄菜单里被挤成每行一个字。高度由 wrap_content 撑开。
             View mainLayout = findViewById(R.id.main_layout);
             int totalWidth = mainLayout != null && mainLayout.getWidth() > 0
                     ? mainLayout.getWidth()
