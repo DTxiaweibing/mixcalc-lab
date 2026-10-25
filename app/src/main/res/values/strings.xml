@@ -110,4 +110,6 @@
     <string name="mix_menu_batch">批次切换</string>
     <string name="mix_batch_dialog_title">选择批次</string>
     <string name="mix_batch_01">批次01</string>
-    <string name="mix_batch_02">批次02</string></resources>
+    <string name="mix_batch_02">批次02</string>
+    <string name="mix_batch_selected">%1$s ✓</string>
+</resources>

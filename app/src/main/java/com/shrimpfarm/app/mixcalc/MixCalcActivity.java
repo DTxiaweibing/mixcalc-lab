@@ -1853,17 +1853,19 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     // 批次选择：两个固定批次，当前批次预先选中。切换时自动提交未完成的编辑。
+    // 批次选择：当前批次后面打勾，点选即切换（切换前自动提交未完成的编辑）。
+    // 批次选择：复用项目统一的圆角列表弹窗，当前批次后打勾。
     private void showBatchDialog() {
         closeEditorAndIme();
-        final String[] labels = {getString(R.string.mix_batch_01), getString(R.string.mix_batch_02)};
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.mix_batch_dialog_title)
-                .setSingleChoiceItems(labels, currentBatchIndex, (dialog, which) -> {
-                    dialog.dismiss();
-                    switchBatch(which);
-                })
-                .setNegativeButton(R.string.btn_cancel, null)
-                .show();
+        String[] labels = new String[MixCalcPrefs.BATCH_COUNT];
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = i == currentBatchIndex
+                    ? getString(R.string.mix_batch_selected, batchLabel(i))
+                    : batchLabel(i);
+        }
+
+        showAnchoredListDialog(getString(R.string.mix_batch_dialog_title), labels, null,
+                (dialog, which) -> switchBatch(which));
     }
     // 语言选择：单选列表 + 取消，选完存偏好并重建界面。
     private void showLanguageDialog() {
