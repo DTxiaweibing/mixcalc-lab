@@ -40,6 +40,8 @@ import com.shrimpfarm.app.BaseActivity;
 import com.shrimpfarm.app.BuildConfig;
 import com.shrimpfarm.app.R;
 import com.shrimpfarm.app.mixcalc.model.FeedData;
+import com.shrimpfarm.app.mixcalc.prefs.MixCalcPrefs;
+import com.shrimpfarm.app.mixcalc.table.TabletLayout;
 import com.shrimpfarm.app.mixcalc.table.CellStyle;
 import com.shrimpfarm.app.mixcalc.table.CellTextProvider;
 import com.shrimpfarm.app.mixcalc.table.MixCalcTableView;
@@ -51,9 +53,7 @@ import com.shrimpfarm.app.mixcalc.table.TableColumnConfig;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -62,16 +62,7 @@ import java.util.Map;
 public class MixCalcActivity extends BaseActivity {
 
     private static final String TAG = "MixCalc";
-    private static final String PREFS_NAME = "MixCalcPrefs";
-    private static final String KEY_WATER_PERCENTAGE = "water_percentage";
-    private static final String KEY_COLUMN_VISIBILITY = "column_visibility_";
-    private static final String KEY_FIXED_COLUMN = "fixed_column_";
-    private static final String KEY_SAVED_DATA = "saved_data";
-    private static final String KEY_GLOBAL_WATER = "global_water";
-    private static final String KEY_FERMENTED_INCLUDED_IN_WATER = "fermented_included_in_water";
-    private static final String KEY_FERMENTED_INCLUDED_IN_AVERAGE = "fermented_included_in_average";
     // 已同意的 versionCode：>= 当前版本才视为已同意（升级后需重新同意）
-    private static final String KEY_PRIVACY_AGREED = "privacy_agreed_version";
 
     // 视图组件
     private MixCalcTableView table;
@@ -424,74 +415,21 @@ public class MixCalcActivity extends BaseActivity {
 
     // 快速加载设置
     private void loadQuickSettings() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            globalWaterPercentage = prefs.getInt(KEY_GLOBAL_WATER, 20);
-            fermentedIncludedInWater = prefs.getBoolean(KEY_FERMENTED_INCLUDED_IN_WATER, false);
-            fermentedIncludedInAverage = prefs.getBoolean(KEY_FERMENTED_INCLUDED_IN_AVERAGE, false);
-
-        } catch (Exception e) {
-            Log.e(TAG, "快速加载设置异常", e);
-        }
+        globalWaterPercentage = MixCalcPrefs.getWaterPercentage(this);
+        fermentedIncludedInWater = MixCalcPrefs.isFermentedInWater(this);
+        fermentedIncludedInAverage = MixCalcPrefs.isFermentedInAverage(this);
     }
 
     private boolean isTabletDevice(Context context) {
-        try {
-            // 主要看 Android 标准的最小宽度 ≥ 600dp。有些平板 xdpi/ydpi 上报不准，
-            // 只靠物理对角线会把平板当成手机，本该铺满的列就被横向滚动截断了。
-            if (context.getResources().getConfiguration().smallestScreenWidthDp >= 600) {
-                return true;
-            }
-            DisplayMetrics displayMetrics = context.getResources().getDisplayMetrics();
-            float widthInches = displayMetrics.widthPixels / displayMetrics.xdpi;
-            float heightInches = displayMetrics.heightPixels / displayMetrics.ydpi;
-            double diagonalInches = Math.sqrt(Math.pow(widthInches, 2) + Math.pow(heightInches, 2));
-            return diagonalInches >= 7.0;
-        } catch (Exception e) {
-            Log.e(TAG, "检测平板设备异常: " + e.getMessage());
-            return false;
-        }
+        return TabletLayout.isTabletDevice(context);
     }
 
     // 从 SharedPreferences 同步加载已保存数据（数据量小，主线程解析）
     private void loadSavedData() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            String dataJson = prefs.getString(KEY_SAVED_DATA, null);
-
-            if (dataJson == null || dataJson.isEmpty()) {
-                return;
-            }
-
-            JSONArray jsonArray = new JSONArray(dataJson);
-            int count = Math.min(jsonArray.length(), TOTAL_ROWS);
-
-            for (int i = 0; i < count; i++) {
-                try {
-                    JSONObject json = jsonArray.getJSONObject(i);
-                    FeedData data = dataList.get(i);
-                    if (data == null) {
-                        data = new FeedData();
-                        dataList.set(i, data);
-                    }
-
-                    data.fromJson(json);
-                    // 第 1 行交给 recomputeFirstRowRemainder() 处理，避免用“基数”把平均算反
-                    if (i != FIRST_ROW) {
-                        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-                    }
-
-                } catch (Exception e) {
-                    Log.e(TAG, "解析第" + i + "行数据异常", e);
-                }
-            }
-
-            // 加载后统一扣第 1 行基数（上面只逐行重算）
-            recomputeFirstRowRemainder();
-
-        } catch (Exception e) {
-            Log.e(TAG, "后台加载异常", e);
-        }
+        MixCalcPrefs.loadData(this, dataList, TOTAL_ROWS,
+                globalWaterPercentage, fermentedIncludedInWater,
+                fermentedIncludedInAverage, FIRST_ROW);
+        recomputeFirstRowRemainder();
     }
 
     // 获取列索引
@@ -796,194 +734,6 @@ public class MixCalcActivity extends BaseActivity {
         rebuildCompleteTable();
     }
 
-    // ==================== 数据格式化 / 跳转 ====================
-
-    // 数据格式化和传递方法
-    private String formatDataToMessage() {
-        try {
-            StringBuilder messageBuilder = new StringBuilder();
-
-            messageBuilder.append(getString(R.string.mix_summary_header));
-            messageBuilder.append(getString(R.string.time_prefix)).append(new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(new Date())).append("\n");
-            messageBuilder.append(getString(R.string.mix_summary_water_pct)).append(globalWaterPercentage).append("%\n\n");
-            messageBuilder.append(getString(R.string.mix_summary_trough_data));
-            messageBuilder.append("──────────────────────────────────\n");
-
-            String header = buildHeaderWithExtraSpacing();
-            messageBuilder.append(header).append("\n");
-
-            double totalShedCount = 0;
-            double totalFermented = 0;
-            double totalPowder = 0;
-            double totalFeed03 = 0;
-            double totalFeed05 = 0;
-            double totalFeed10 = 0;
-            double totalWater = 0;
-            double totalWeighed = 0;
-
-            for (int i = 0; i < dataList.size(); i++) {
-                FeedData data = dataList.get(i);
-                if (data == null) continue;
-
-                String shedNumber = data.getShedNumber();
-                double shedCount = data.getShedCount();
-                double fermentedFeed = data.getFermentedFeed();
-                double powderFeed = data.getPowderFeed();
-                double feed03 = data.getFeed03();
-                double feed05 = data.getFeed05();
-                double feed10 = data.getFeed10();
-                double water = data.getWater();
-                double weighedFeed = data.getWeighedFeed();
-
-                double averageFeed = 0;
-                if (shedCount > 0) {
-                    double totalDryFeed = powderFeed + feed03 + feed05 + feed10;
-                    if (fermentedIncludedInAverage) {
-                        totalDryFeed += fermentedFeed;
-                    }
-                    averageFeed = totalDryFeed / shedCount;
-                }
-
-                if ((shedNumber != null && !shedNumber.trim().isEmpty()) || shedCount > 0) {
-                    String[] rowData = new String[]{
-                        formatWithPadding(shedNumber.isEmpty() ? String.valueOf(i + 1) : shedNumber, 8),
-                        formatNumberWithPadding(shedCount, 8),
-                        formatNumberWithPadding(averageFeed, 8),
-                        formatNumberWithPadding(fermentedFeed, 8),
-                        formatNumberWithPadding(powderFeed, 8),
-                        formatNumberWithPadding(feed03, 8),
-                        formatNumberWithPadding(feed05, 8),
-                        formatNumberWithPadding(feed10, 8),
-                        formatNumberWithPadding(water, 8),
-                        formatNumberWithPadding(weighedFeed, 8)
-                    };
-
-                    String row = buildDataRowWithSpacing(rowData);
-                    messageBuilder.append(row).append("\n");
-
-                    totalShedCount += shedCount;
-                    totalFermented += fermentedFeed;
-                    totalPowder += powderFeed;
-                    totalFeed03 += feed03;
-                    totalFeed05 += feed05;
-                    totalFeed10 += feed10;
-                    totalWater += water;
-                    totalWeighed += weighedFeed;
-                }
-            }
-
-            double totalDryFeed = totalPowder + totalFeed03 + totalFeed05 + totalFeed10;
-            if (fermentedIncludedInAverage) {
-                totalDryFeed += totalFermented;
-            }
-            double overallAverageFeed = totalShedCount > 0 ? totalDryFeed / totalShedCount : 0;
-            double totalIngredients = totalFermented + totalPowder + totalFeed03 + totalFeed05 + totalFeed10 + totalWater;
-            double averageWeighed = totalShedCount > 0 ? totalIngredients / totalShedCount : 0;
-
-            messageBuilder.append(getString(R.string.mix_summary_stats_header));
-            messageBuilder.append("──────────────────────────────────\n");
-
-            String summary = String.format(Locale.getDefault(), 
-                                           getString(R.string.mix_summary_total_sheds) +
-                                           getString(R.string.mix_summary_avg_feed) +
-                                           getString(R.string.mix_summary_total_ferment) +
-                                           getString(R.string.mix_summary_total_powder) + 
-                                           getString(R.string.mix_summary_total_03) +
-                                           getString(R.string.mix_summary_total_05) +
-                                           getString(R.string.mix_summary_total_10) +
-                                           getString(R.string.mix_summary_total_water) +
-                                           getString(R.string.mix_summary_avg_weigh) +
-                                           getString(R.string.mix_summary_total_dry) +
-                                           getString(R.string.mix_summary_water_pct_val),
-                                           formatNumberWithPadding(totalShedCount, 8),
-                                           formatNumberWithPadding(overallAverageFeed, 8),
-                                           formatNumberWithPadding(totalFermented, 8),
-                                           formatNumberWithPadding(totalPowder, 8),
-                                           formatNumberWithPadding(totalFeed03, 8),
-                                           formatNumberWithPadding(totalFeed05, 8),
-                                           formatNumberWithPadding(totalFeed10, 8),
-                                           formatNumberWithPadding(totalWater, 8),
-                                           formatNumberWithPadding(averageWeighed, 8),
-                                           formatNumberWithPadding(totalDryFeed, 8),
-                                           globalWaterPercentage
-                                           );
-
-            messageBuilder.append(summary);
-
-            String message = messageBuilder.toString();
-            return message;
-
-        } catch (Exception e) {
-            Log.e(TAG, "格式化数据异常: " + e.getMessage());
-            return "数据格式化失败: " + e.getMessage();
-        }
-    }
-
-    // 辅助方法
-    private String formatNumberWithPadding(double value, int width) {
-        String numberStr;
-        if (value == (int) value) {
-            numberStr = String.valueOf((int) value);
-        } else {
-            numberStr = String.format(Locale.getDefault(), "%.2f", value);
-        }
-
-        return formatWithPadding(numberStr, width);
-    }
-
-    private String formatWithPadding(String content, int width) {
-        if (content == null) content = "";
-
-        int totalSpaces = width - content.length();
-        if (totalSpaces <= 0) {
-            return content.substring(0, width);
-        }
-
-        int leftSpaces = totalSpaces / 2;
-        int rightSpaces = totalSpaces - leftSpaces;
-
-        StringBuilder result = new StringBuilder();
-        for (int i = 0; i < leftSpaces; i++) {
-            result.append(" ");
-        }
-        result.append(content);
-        for (int i = 0; i < rightSpaces; i++) {
-            result.append(" ");
-        }
-
-        return result.toString();
-    }
-
-    // 表头行方法
-    private String buildHeaderWithExtraSpacing() {
-        String[] headers = {getString(R.string.mix_header_trough), getString(R.string.mix_header_sheds), getString(R.string.mix_header_avg), getString(R.string.mix_header_ferment), getString(R.string.mix_header_powder), getString(R.string.mix_header_03), getString(R.string.mix_header_05), getString(R.string.mix_header_10), getString(R.string.mix_header_water), getString(R.string.mix_header_weigh)};
-
-        StringBuilder headerRow = new StringBuilder();
-
-        for (int i = 0; i < headers.length; i++) {
-            String header = headers[i];
-            headerRow.append(" ").append(header).append(" ");
-            if (i < headers.length - 1) {
-                headerRow.append(" ");
-            }
-        }
-
-        return headerRow.toString();
-    }
-
-    private String buildDataRowWithSpacing(String[] rowData) {
-        StringBuilder dataRow = new StringBuilder();
-
-        for (int i = 0; i < rowData.length; i++) {
-            dataRow.append(rowData[i]);
-            if (i < rowData.length - 1) {
-                dataRow.append(" ");
-            }
-        }
-
-        return dataRow.toString();
-    }
-
     // 更新统计行
     private void updateFooterRow() {
         try {
@@ -1090,110 +840,33 @@ public class MixCalcActivity extends BaseActivity {
     // ==================== 平板自适应 ====================
 
     private void initTabletAdaptiveSettings() {
-        try {
-            isTabletMode = isTabletDevice(this);
-
-            adaptiveColumnWidths = new int[columnWidths.length];
-
-            if (isTabletMode) {
-                calculateAdaptiveColumnWidths();
-            } else {
-                for (int i = 0; i < columnWidths.length; i++) {
-                    adaptiveColumnWidths[i] = dpToPx(columnWidths[i]);
-                }
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "初始化平板自适应设置异常: " + e.getMessage());
-            isTabletMode = false;
-            adaptiveColumnWidths = new int[columnWidths.length];
-            for (int i = 0; i < columnWidths.length; i++) {
-                adaptiveColumnWidths[i] = dpToPx(columnWidths[i]);
-            }
+        isTabletMode = TabletLayout.isTabletDevice(this);
+        float density = getResources().getDisplayMetrics().density;
+        if (isTabletMode) {
+            adaptiveColumnWidths = TabletLayout.computeWidths(
+                    columnWidths, columnIds, visibleColumns(), getScreenWidth(), density);
+        } else {
+            adaptiveColumnWidths = TabletLayout.fixedWidths(columnWidths, density);
         }
     }
 
-    private void calculateAdaptiveColumnWidths() {
-        try {
-            int screenWidth = getScreenWidth();
-
-            // 如果 columnVisibility 为空，先初始化
-            if (columnVisibility.isEmpty()) {
-                for (int i = 0; i < columnIds.length; i++) {
-                    columnVisibility.put(columnIds[i], true);
-                }
-            }
-
-            int visibleColumnCount = 0;
-            for (int i = 0; i < columnIds.length; i++) {
-                String columnId = columnIds[i];
-                Boolean visible = columnVisibility.get(columnId);
-                if (visible != null && visible) {
-                    visibleColumnCount++;
-                }
-            }
-
-            if (visibleColumnCount == 0) {
-                visibleColumnCount = 1;
-            }
-
-            int baseColumnWidth = screenWidth / visibleColumnCount;
-
-            for (int i = 0; i < columnIds.length; i++) {
-                String columnId = columnIds[i];
-                Boolean visible = columnVisibility.get(columnId);
-
-                if (visible != null && visible) {
-                    int minWidth = dpToPx(50);
-                    int maxWidth = dpToPx(120);
-                    int adjustedWidth = baseColumnWidth;
-
-                    if ("shed_number".equals(columnId) || "weighed_feed".equals(columnId)) {
-                        adjustedWidth = (int)(baseColumnWidth * 1.2);
-                    }
-
-                    if ("seq".equals(columnId) || "average_feed".equals(columnId)) {
-                        adjustedWidth = (int)(baseColumnWidth * 0.8);
-                    }
-
-                    adjustedWidth = Math.max(minWidth, Math.min(adjustedWidth, maxWidth));
-                    adaptiveColumnWidths[i] = adjustedWidth;
-                } else {
-                    adaptiveColumnWidths[i] = 0;
-                }
-            }
-
-            adjustTotalWidth(screenWidth);
-
-        } catch (Exception e) {
-            Log.e(TAG, "计算自适应列宽异常: " + e.getMessage());
-            for (int i = 0; i < columnWidths.length; i++) {
-                adaptiveColumnWidths[i] = dpToPx(columnWidths[i]);
-            }
-        }
+    private void recalcAdaptiveWidths() {
+        float density = getResources().getDisplayMetrics().density;
+        adaptiveColumnWidths = TabletLayout.computeWidths(
+                columnWidths, columnIds, visibleColumns(), getScreenWidth(), density);
     }
 
-    private void adjustTotalWidth(int targetWidth) {
-        try {
-            int currentTotal = 0;
-            for (int width : adaptiveColumnWidths) {
-                currentTotal += width;
-            }
-
-            if (currentTotal <= 0) return;
-
-            if (Math.abs(currentTotal - targetWidth) > 50) {
-                float scale = (float) targetWidth / currentTotal;
-
-                for (int i = 0; i < adaptiveColumnWidths.length; i++) {
-                    adaptiveColumnWidths[i] = (int)(adaptiveColumnWidths[i] * scale);
-                }
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "调整总宽度异常: " + e.getMessage());
+    /** 当前可见性数组，缺失的列按可见处理。 */
+    private boolean[] visibleColumns() {
+        boolean[] visible = new boolean[columnIds.length];
+        for (int i = 0; i < columnIds.length; i++) {
+            Boolean value = columnVisibility.get(columnIds[i]);
+            visible[i] = value == null || value;
         }
+        return visible;
     }
+
+
 
     private int getScreenWidth() {
         try {
@@ -1283,7 +956,7 @@ public class MixCalcActivity extends BaseActivity {
     private void rebuildCompleteTable() {
         try {
             if (isTabletMode) {
-                calculateAdaptiveColumnWidths();
+                recalcAdaptiveWidths();
             }
             applyColumnConfig();
             if (table != null) {
@@ -1322,115 +995,39 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     private void loadColumnVisibility() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            for (int i = 1; i < columnIds.length; i++) {
-                String columnId = columnIds[i];
-                // 平板：一律显示全部列（无齿轮入口，隐藏状态在平板上没有意义）
-                boolean visible = isTabletDevice(this)
-                        || prefs.getBoolean(KEY_COLUMN_VISIBILITY + columnId, true);
-                columnVisibility.put(columnId, visible);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "加载列可见性异常: " + e.getMessage());
-        }
+        MixCalcPrefs.loadColumnVisibility(this, columnIds, isTabletDevice(this), columnVisibility);
     }
 
     private void loadColumnFixedState() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            for (int i = 1; i < columnIds.length; i++) {
-                String columnId = columnIds[i];
-                boolean fixed = prefs.getBoolean(KEY_FIXED_COLUMN + columnId, false);
-                columnFixed.put(columnId, fixed);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "加载列固定状态异常: " + e.getMessage());
-        }
+        MixCalcPrefs.loadColumnFixedState(this, columnIds, columnFixed);
     }
 
     private void saveColumnVisibility() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            SharedPreferences.Editor editor = prefs.edit();
-            for (int i = 1; i < columnIds.length; i++) {
-                String columnId = columnIds[i];
-                editor.putBoolean(KEY_COLUMN_VISIBILITY + columnId, columnVisibility.get(columnId));
-            }
-            editor.apply();
-        } catch (Exception e) {
-            Log.e(TAG, "保存列可见性异常: " + e.getMessage());
-        }
+        MixCalcPrefs.saveColumnVisibility(this, columnIds, columnVisibility);
     }
 
     private void saveColumnFixedState() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            SharedPreferences.Editor editor = prefs.edit();
-            for (int i = 1; i < columnIds.length; i++) {
-                String columnId = columnIds[i];
-                editor.putBoolean(KEY_FIXED_COLUMN + columnId, columnFixed.get(columnId));
-            }
-            editor.apply();
-        } catch (Exception e) {
-            Log.e(TAG, "保存列固定状态异常: " + e.getMessage());
-        }
+        MixCalcPrefs.saveColumnFixedState(this, columnIds, columnFixed);
     }
 
     // 保存全局水百分比
     private void saveGlobalWaterPercentage() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            SharedPreferences.Editor editor = prefs.edit();
-            editor.putInt(KEY_GLOBAL_WATER, globalWaterPercentage);
-            editor.apply();
-        } catch (Exception e) {
-            Log.e(TAG, "保存全局水百分比异常: " + e.getMessage());
-        }
+        MixCalcPrefs.saveWaterPercentage(this, globalWaterPercentage);
     }
 
     // 保存发酵料参与水分计算设置
     private void saveFermentedIncludedInWater() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            SharedPreferences.Editor editor = prefs.edit();
-            editor.putBoolean(KEY_FERMENTED_INCLUDED_IN_WATER, fermentedIncludedInWater);
-            editor.apply();
-        } catch (Exception e) {
-            Log.e(TAG, "保存发酵料参与水分计算设置异常: " + e.getMessage());
-        }
+        MixCalcPrefs.saveFermentedWater(this, fermentedIncludedInWater);
     }
 
     // 保存发酵料参与平均吃料计算设置
     private void saveFermentedIncludedInAverage() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            SharedPreferences.Editor editor = prefs.edit();
-            editor.putBoolean(KEY_FERMENTED_INCLUDED_IN_AVERAGE, fermentedIncludedInAverage);
-            editor.apply();
-        } catch (Exception e) {
-            Log.e(TAG, "保存发酵料参与平均吃料计算设置异常: " + e.getMessage());
-        }
+        MixCalcPrefs.saveFermentedAverage(this, fermentedIncludedInAverage);
     }
 
     // 保存所有数据
     private void saveAllData() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            SharedPreferences.Editor editor = prefs.edit();
-
-            JSONArray jsonArray = new JSONArray();
-            for (int i = 0; i < dataList.size(); i++) {
-                FeedData data = dataList.get(i);
-                jsonArray.put(data.toJson());
-            }
-
-            String dataJson = jsonArray.toString();
-            editor.putString(KEY_SAVED_DATA, dataJson);
-            editor.apply();
-        } catch (Exception e) {
-            Log.e(TAG, "保存所有数据异常: " + e.getMessage());
-        }
+        MixCalcPrefs.saveData(this, dataList);
     }
 
     @android.annotation.SuppressLint("InflateParams")
@@ -2296,8 +1893,8 @@ public class MixCalcActivity extends BaseActivity {
     // "已同意"按版本记（KEY_PRIVACY_AGREED 存当前 versionCode），升级后要重新同意，
     // 免得老用户升级上来直接跳过。
     private void showPrivacyConsentIfNeeded() {
-        final SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        if (prefs.getInt(KEY_PRIVACY_AGREED, 0) >= BuildConfig.VERSION_CODE) {
+        final int agreedVersion = MixCalcPrefs.getPrivacyAgreedVersion(this);
+        if (agreedVersion >= BuildConfig.VERSION_CODE) {
             return;
         }
 
@@ -2366,7 +1963,7 @@ public class MixCalcActivity extends BaseActivity {
             buttonLayout.addView(divider);
             addConsentButton(dialog, buttonLayout, getString(R.string.privacy_btn_agree), 0xFF2D8C42,
                     (d, w) -> {
-                        prefs.edit().putInt(KEY_PRIVACY_AGREED, BuildConfig.VERSION_CODE).apply();
+                        MixCalcPrefs.setPrivacyAgreedVersion(this, BuildConfig.VERSION_CODE);
                         d.dismiss();
                     });
 
