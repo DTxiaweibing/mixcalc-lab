@@ -409,6 +409,7 @@ public class MixCalcTableView extends ViewGroup {
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         removeCallbacks(longPressRunnable);
+        stopFling();
         releaseVelocityTracker();
     }
 
@@ -447,6 +448,86 @@ public class MixCalcTableView extends ViewGroup {
         invalidate();
     }
 
+    // ------------------------------------------------------------------
+    // 惯性滑动：照鸿蒙版的算法（每帧按指数衰减，不做跑道上限封顶）
+    //   每帧 v *= exp(-4.5 * dt)；offset -= v * dt；|v| < 15dp/s 停
+    // 好处：手速再快也能算，不会像 OverScroller 那样被裁速度或几帧撞边界就停。
+    // ------------------------------------------------------------------
+
+    private boolean flinging;
+    private float flingVx;
+    private float flingVy;
+    private float flingAccX;
+    private float flingAccY;
+    private long flingLastTime;
+
+    private final Runnable flingRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!flinging) {
+                return;
+            }
+            long now = android.os.SystemClock.uptimeMillis();
+            float dt = Math.min(0.05f, (now - flingLastTime) / 1000f);
+            flingLastTime = now;
+
+            float decay = (float) Math.exp(-4.5 * dt);
+            flingVx *= decay;
+            flingVy *= decay;
+
+            // 用累加器保留小数，避免小步长被 int 截断后"走不动"
+            flingAccX -= flingVx * dt;
+            flingAccY -= flingVy * dt;
+            int stepX = (int) flingAccX;
+            int stepY = (int) flingAccY;
+            flingAccX -= stepX;
+            flingAccY -= stepY;
+
+            boolean moved = scrollByTable(stepX, stepY);
+
+            // 贴到边界就把那个方向的惯性清掉
+            if (offsetX <= 0 || offsetX >= metrics.maxScrollX) {
+                flingVx = 0;
+                flingAccX = 0;
+            }
+            if (offsetY <= 0 || offsetY >= metrics.maxScrollY) {
+                flingVy = 0;
+                flingAccY = 0;
+            }
+
+            int stopThreshold = dp(getContext(), 15);
+            if (!moved || (Math.abs(flingVx) < stopThreshold && Math.abs(flingVy) < stopThreshold)) {
+                stopFling();
+                return;
+            }
+            postOnAnimation(this);
+        }
+    };
+
+    private void startFling(float vx, float vy) {
+        stopFling();
+        int startThreshold = dp(getContext(), 60);
+        if (Math.abs(vx) < startThreshold && Math.abs(vy) < startThreshold) {
+            return;
+        }
+        flinging = true;
+        flingVx = vx;
+        flingVy = vy;
+        flingAccX = 0f;
+        flingAccY = 0f;
+        flingLastTime = android.os.SystemClock.uptimeMillis();
+        postOnAnimation(flingRunnable);
+    }
+
+    private void stopFling() {
+        flinging = false;
+        flingVx = 0f;
+        flingVy = 0f;
+        flingAccX = 0f;
+        flingAccY = 0f;
+        removeCallbacks(flingRunnable);
+    }
+
     private void clampOffsets() {
         offsetX = clamp(offsetX, 0, metrics.maxScrollX);
         offsetY = clamp(offsetY, 0, metrics.maxScrollY);
@@ -483,7 +564,7 @@ public class MixCalcTableView extends ViewGroup {
 
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                scroller.forceFinished(true);
+                stopFling();
                 downX = ev.getX();
                 downY = ev.getY();
                 lastX = downX;
@@ -528,21 +609,9 @@ public class MixCalcTableView extends ViewGroup {
                     if (velocityTracker != null) {
                         velocityTracker.addMovement(ev);
                         velocityTracker.computeCurrentVelocity(1000, maxFlingVelocity);
-                        int vx = (int) velocityTracker.getXVelocity();
-                        int vy = (int) velocityTracker.getYVelocity();
-                        if (Math.abs(vx) > minFlingVelocity || Math.abs(vy) > minFlingVelocity) {
-                            int flingX = capFlingVelocity(vx,
-                                    vx > 0 ? offsetX : metrics.maxScrollX - offsetX);
-                            int flingY = capFlingVelocity(vy,
-                                    vy > 0 ? offsetY : metrics.maxScrollY - offsetY);
-                            if (Math.abs(flingX) > minFlingVelocity
-                                    || Math.abs(flingY) > minFlingVelocity) {
-                                scroller.fling(offsetX, offsetY, -flingX, -flingY,
-                                        -FLING_UNBOUNDED, FLING_UNBOUNDED,
-                                        -FLING_UNBOUNDED, FLING_UNBOUNDED);
-                                postInvalidateOnAnimation();
-                            }
-                        }
+                        float vx = velocityTracker.getXVelocity();
+                        float vy = velocityTracker.getYVelocity();
+                        startFling(vx, vy);
                     }
                 } else if (!longPressFired) {
                     performClick();
