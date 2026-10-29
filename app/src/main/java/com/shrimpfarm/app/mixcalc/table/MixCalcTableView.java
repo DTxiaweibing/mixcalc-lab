@@ -245,6 +245,11 @@ public class MixCalcTableView extends ViewGroup {
         if (top < headerHeight) {
             top = headerHeight;
         }
+        // 先 measure 再 layout：不然 TextView 内部文本布局还是 0 宽高，
+        // Gravity.CENTER 按 0 尺寸算，文字就会贴左上、看起来没居中
+        int wSpec = MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY);
+        int hSpec = MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY);
+        nextRowButton.measure(wSpec, hSpec);
         nextRowButton.layout(left, top, left + w, top + h);
     }
 
