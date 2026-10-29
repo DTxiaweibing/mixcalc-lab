@@ -41,6 +41,43 @@ public final class TabletLayout {
     }
 
     /**
+     * 把可见列按比例放大到铺满屏宽。
+     * 隐藏掉很多列以后，剩下列的总宽可能还不到屏宽，右侧会留一条空白（看起来像"少了一列"）。
+     * 这里把差额按当前宽度比例补给可见列；已铺满或超出时不动（保持横向滚动）。
+     */
+    public static void fillToWidth(int[] widths, boolean[] visible, int screenWidthPx) {
+        if (widths == null || widths.length == 0 || screenWidthPx <= 0) {
+            return;
+        }
+        int total = 0;
+        int lastVisible = -1;
+        for (int i = 0; i < widths.length; i++) {
+            boolean shown = visible == null || i >= visible.length || visible[i];
+            if (shown && widths[i] > 0) {
+                total += widths[i];
+                lastVisible = i;
+            }
+        }
+        if (total <= 0 || total >= screenWidthPx || lastVisible < 0) {
+            return;
+        }
+        float scale = (float) screenWidthPx / total;
+        int newTotal = 0;
+        for (int i = 0; i < widths.length; i++) {
+            boolean shown = visible == null || i >= visible.length || visible[i];
+            if (shown && widths[i] > 0) {
+                widths[i] = Math.max(1, (int) (widths[i] * scale));
+                newTotal += widths[i];
+            }
+        }
+        // 取整误差补给最后一个可见列，保证正好铺满、不留半像素缝
+        int diff = screenWidthPx - newTotal;
+        if (diff != 0) {
+            widths[lastVisible] = Math.max(1, widths[lastVisible] + diff);
+        }
+    }
+
+    /**
      * 平板模式：按可见列数均分屏宽，再按列语义微调，最后整体缩放到屏宽。
      *
      * @param widthsDp  基础宽度（dp），仅用于列数

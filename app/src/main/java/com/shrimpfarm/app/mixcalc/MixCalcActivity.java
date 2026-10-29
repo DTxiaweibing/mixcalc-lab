@@ -902,12 +902,15 @@ public class MixCalcActivity extends BaseActivity {
         } else {
             adaptiveColumnWidths = TabletLayout.fixedWidths(columnWidths, density);
         }
+        // 隐藏列太多时把可见列铺满屏宽（否则右侧留白，像少了一列）
+        TabletLayout.fillToWidth(adaptiveColumnWidths, visibleColumns(), getScreenWidth());
     }
 
     private void recalcAdaptiveWidths() {
         float density = getResources().getDisplayMetrics().density;
         adaptiveColumnWidths = TabletLayout.computeWidths(
                 columnWidths, columnIds, visibleColumns(), getScreenWidth(), density);
+        TabletLayout.fillToWidth(adaptiveColumnWidths, visibleColumns(), getScreenWidth());
     }
 
     /** 当前可见性数组，缺失的列按可见处理。 */
@@ -1008,6 +1011,9 @@ public class MixCalcActivity extends BaseActivity {
         try {
             if (isTabletMode) {
                 recalcAdaptiveWidths();
+            } else {
+                // 手机模式也要每次重算：隐藏列后要把可见列铺满屏宽
+                initTabletAdaptiveSettings();
             }
             applyColumnConfig();
             if (table != null) {
