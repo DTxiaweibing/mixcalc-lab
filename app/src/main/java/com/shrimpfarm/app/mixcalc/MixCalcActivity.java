@@ -1580,9 +1580,10 @@ public class MixCalcActivity extends BaseActivity {
         return firstEmpty >= 0 && row > firstEmpty && !rowHasInput(row);
     }
 
-    // 棚数必须先有本行棚号：本行棚号空、且棚数也还空着，就不让编辑棚数（第一行也一样）
+    // 特例：只有**第一行**的棚数要求先填棚号（棚号空、棚数也空着时拦截）。
+    // 其余行仍走原来的顺序规则（isOrderBlocked），不要在这里扩大范围。
     private boolean needsShedNumberFirst(int row, String columnId) {
-        if (!"shed_count".equals(columnId)) {
+        if (row != 0 || !"shed_count".equals(columnId)) {
             return false;
         }
         FeedData data = getData(row);
