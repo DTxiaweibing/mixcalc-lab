@@ -457,7 +457,7 @@ public class MixCalcTableView extends ViewGroup {
     // 惯性手感参数
     //   FLING_NATURAL_K：自然减速曲线（总距离 = 初速度 / K），跟鸿蒙同一套手感
     //   FLING_MAX_VELOCITY：测速上限，别被系统默认 8000px/s 截断（猛甩会丢惯性）
-    private static final float FLING_NATURAL_K = 4.5f;
+    private static final float FLING_NATURAL_K = 4.0f;
     private static final float FLING_MAX_VELOCITY = 25000f;
 
     private boolean flinging;
