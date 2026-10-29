@@ -206,6 +206,10 @@ public class MixCalcActivity extends BaseActivity {
             if (isOrderBlocked(row)) {
                 return false;
             }
+            // 棚数要求本行棚号先填（第一行也一样）
+            if (needsShedNumberFirst(row, columnId)) {
+                return false;
+            }
             return isCellEnabled(columnId, data, row);
         }
 
@@ -246,11 +250,16 @@ public class MixCalcActivity extends BaseActivity {
     private final OnCellTapListener tapListener = new OnCellTapListener() {
         @Override
         public void onCellClick(int row, String columnId) {
-            // 编辑由引擎的 beginEdit 处理；这里只负责把"顺序录入"被拦的原因告诉用户
+            // 编辑由引擎的 beginEdit 处理；这里只负责把被拦的原因告诉用户
             FeedData data = getData(row);
-            if (data != null && isEditableColumn(columnId) && isCellEnabled(columnId, data, row)
-                    && isOrderBlocked(row)) {
-                showOrderHintDialog();
+            if (data == null || !isEditableColumn(columnId)) {
+                return;
+            }
+            if (!isCellEnabled(columnId, data, row)) {
+                return;
+            }
+            if (isOrderBlocked(row) || needsShedNumberFirst(row, columnId)) {
+                showOrderHintDialog(row);
             }
         }
 
@@ -308,6 +317,11 @@ public class MixCalcActivity extends BaseActivity {
             editBeginShedBase = data == null ? 0 : data.getShedCountBase();
             editBeginShedBaseSum = data == null ? 0 : data.getShedCountBaseSum();
             editBeginShedManual = data != null && data.isShedCountManuallyModified();
+            // 第一次点第一行棚号：告诉用户格式，并给一个"查看帮助"入口
+            if (row == 0 && "shed_number".equals(columnId) && !MixCalcPrefs.isShedInputHintShown(MixCalcActivity.this)) {
+                MixCalcPrefs.setShedInputHintShown(MixCalcActivity.this);
+                showShedInputHint();
+            }
         }
 
         @Override
@@ -1566,18 +1580,56 @@ public class MixCalcActivity extends BaseActivity {
         return firstEmpty >= 0 && row > firstEmpty && !rowHasInput(row);
     }
 
+    // 棚数必须先有本行棚号：本行棚号空、且棚数也还空着，就不让编辑棚数（第一行也一样）
+    private boolean needsShedNumberFirst(int row, String columnId) {
+        if (!"shed_count".equals(columnId)) {
+            return false;
+        }
+        FeedData data = getData(row);
+        if (data == null) {
+            return false;
+        }
+        String shedNumber = data.getShedNumber();
+        boolean noShedNumber = shedNumber == null || shedNumber.trim().isEmpty();
+        return noShedNumber && data.getShedCount() <= 0;
+    }
+
     // 提示：请先填写第 N 行的「棚号」。样式与鸿蒙一致（70% 宽、标题 18、正文 15、单个绿色按钮）
     private void showOrderHintDialog() {
-        int firstEmpty = firstEmptyRow();
-        if (firstEmpty < 0) {
+        showOrderHintDialog(-1);
+    }
+
+    private void showOrderHintDialog(int row) {
+        int target = row;
+        if (target < 0) {
+            target = firstEmptyRow();
+        }
+        if (target < 0) {
             return;
         }
         showStyledConfirmDialog70(
                 getString(R.string.mix_order_title),
-                getString(R.string.mix_order_message, firstEmpty + 1),
+                getString(R.string.mix_order_message, target + 1),
                 new String[]{getString(R.string.mix_btn_got_it)},
                 new int[]{0xFF2D8C42},
                 new DialogInterface.OnClickListener[]{null});
+    }
+
+    // 第一次点第一行「棚号」：提示怎么填，并可直接进帮助（只提示一次）
+    private void showShedInputHint() {
+        showStyledConfirmDialog70(
+                getString(R.string.mix_shed_hint_title),
+                getString(R.string.mix_shed_hint_msg),
+                new String[]{getString(R.string.mix_btn_got_it), getString(R.string.mix_btn_view_help)},
+                new int[]{0xFF2D8C42, 0xFF2D8C42},
+                new DialogInterface.OnClickListener[]{
+                        (dialog, which) -> {
+                            if (table != null) {
+                                table.beginEdit(0, "shed_number");
+                            }
+                        },
+                        (dialog, which) -> showHelpPanel()
+                });
     }
 
     private boolean isNonFermentedFeedColumn(String columnId) {

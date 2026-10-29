@@ -95,6 +95,9 @@
     <string name="mix_order_title">请按顺序录入</string>
     <string name="mix_order_message">请先填写第%d行的「棚号」。</string>
     <string name="mix_btn_got_it">知道了</string>
+    <string name="mix_shed_hint_title">棚号怎么填</string>
+    <string name="mix_shed_hint_msg">请输入最小棚号和最大棚号，如 1-40，或查看帮助。</string>
+    <string name="mix_btn_view_help">查看帮助</string>
     <string name="mix_btn_next_row">下一行 ▾</string>
     <string name="mix_menu_open">打开菜单</string>
     <string name="mix_menu_quick_settings">快捷设置</string>

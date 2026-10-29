@@ -22,6 +22,9 @@
     <string name="mix_order_title">Fill in order</string>
     <string name="mix_order_message">Please fill the shed number of row %d first.</string>
     <string name="mix_btn_got_it">Got it</string>
+    <string name="mix_shed_hint_title">How to fill shed number</string>
+    <string name="mix_shed_hint_msg">Enter the smallest and largest shed numbers, e.g. 1-40, or view Help.</string>
+    <string name="mix_btn_view_help">View help</string>
     <string name="mix_btn_next_row">Next row ▾</string>
     <string name="mix_dialog_switch_done_title">Mix Change Done</string>
     <string name="mix_dialog_switch_done_msg">Fine feed merged into coarse feed. Mix change complete.</string>

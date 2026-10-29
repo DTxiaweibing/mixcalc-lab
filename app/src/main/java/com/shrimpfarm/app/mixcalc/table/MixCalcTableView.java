@@ -9,6 +9,7 @@ import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.OverScroller;
@@ -411,6 +412,48 @@ public class MixCalcTableView extends ViewGroup {
         removeCallbacks(longPressRunnable);
         stopFling();
         releaseVelocityTracker();
+        if (imeListener != null) {
+            getViewTreeObserver().removeOnGlobalLayoutListener(imeListener);
+        }
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (imeListener == null) {
+            imeListener = this::syncNextRowButtonWithIme;
+        }
+        getViewTreeObserver().addOnGlobalLayoutListener(imeListener);
+    }
+
+    // ------------------------------------------------------------------
+    // 「下一行 ▾」按钮跟随输入法：键盘弹了就显示，键盘收了就隐藏
+    // ------------------------------------------------------------------
+
+    private ViewTreeObserver.OnGlobalLayoutListener imeListener;
+    private boolean imeVisible;
+
+    private void syncNextRowButtonWithIme() {
+        if (getRootView() == null || getWidth() == 0) {
+            return;
+        }
+        Rect frame = new Rect();
+        getWindowVisibleDisplayFrame(frame);
+        int screenHeight = getRootView().getHeight();
+        boolean visible = screenHeight - frame.bottom > dp(getContext(), 120);
+        if (visible == imeVisible) {
+            return;
+        }
+        imeVisible = visible;
+        if (nextRowBtn_row < 0 || nextRowButton == null) {
+            return;
+        }
+        if (visible) {
+            nextRowButton.setVisibility(View.VISIBLE);
+            layoutNextRowButton();
+        } else {
+            nextRowButton.setVisibility(View.GONE);
+        }
     }
 
     // ------------------------------------------------------------------

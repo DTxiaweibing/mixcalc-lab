@@ -40,6 +40,7 @@ public final class MixCalcPrefs {
     private static final String KEY_COLUMN_VISIBILITY = "column_visibility_";
     private static final String KEY_FIXED_COLUMN = "fixed_column_";
     private static final String KEY_PRIVACY_AGREED = "privacy_agreed_version";
+    private static final String KEY_SHED_HINT_SHOWN = "shed_hint_shown";
 
     private MixCalcPrefs() {
     }
@@ -147,5 +148,14 @@ public final class MixCalcPrefs {
 
     public static void setPrivacyAgreedVersion(Context context, int versionCode) {
         prefs(context).edit().putInt(KEY_PRIVACY_AGREED, versionCode).apply();
+    }
+
+    /** 第一行棚号的"怎么填"提示是否已经展示过（只提示一次）。 */
+    public static boolean isShedInputHintShown(Context context) {
+        return prefs(context).getBoolean(KEY_SHED_HINT_SHOWN, false);
+    }
+
+    public static void setShedInputHintShown(Context context) {
+        prefs(context).edit().putBoolean(KEY_SHED_HINT_SHOWN, true).apply();
     }
 }
