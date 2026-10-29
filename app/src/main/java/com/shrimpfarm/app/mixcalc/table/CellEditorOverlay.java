@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.text.Editable;
+import android.text.InputFilter;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
@@ -18,6 +19,21 @@ import com.shrimpfarm.app.R;
 // begin 打开并弹键盘；文本一变就回调 onCellCommitted（保持边输边算）；
 // onScrolled 跟随滚动，滚出可见区就收起；键盘点"下一个"回调 onEditNext。
 class CellEditorOverlay {
+
+    // 棚号列白名单：数字 + 能解析的分隔/区间符号（到 至 ~ — 、 ， , 空格 号 -）
+    // 与鸿蒙版 inputFilter '[0-9\-到至~—、，, 号]' 一致
+    private static final String SHED_ALLOWED = " -到至~—、，,号";
+    private static final InputFilter SHED_NUMBER_FILTER =
+            (source, start, end, dest, dstart, dend) -> {
+                StringBuilder sb = new StringBuilder();
+                for (int i = start; i < end; i++) {
+                    char c = source.charAt(i);
+                    if ((c >= '0' && c <= '9') || SHED_ALLOWED.indexOf(c) >= 0) {
+                        sb.append(c);
+                    }
+                }
+                return sb.length() == end - start ? null : sb.toString();
+            };
 
     private final MixCalcTableView table;
     private final Context context;
@@ -100,6 +116,12 @@ class CellEditorOverlay {
         try {
             editText.setInputType(column.inputType);
             editText.setTextColor(column.textColor);
+            // 按列切换字符过滤：棚号走白名单，其它列清掉过滤器（沿用 inputType 的数字过滤）
+            if ("shed_number".equals(column.id)) {
+                editText.setFilters(new InputFilter[]{SHED_NUMBER_FILTER});
+            } else {
+                editText.setFilters(new InputFilter[0]);
+            }
             String text = table.textProvider() == null
                     ? ""
                     : table.textProvider().getCellText(row, column.id);

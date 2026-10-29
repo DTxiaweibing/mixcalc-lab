@@ -202,6 +202,10 @@ public class MixCalcActivity extends BaseActivity {
             if (data == null || !isEditableColumn(columnId)) {
                 return false;
             }
+            // 顺序录入：前面有空行、这一行又是空的，就不让编辑
+            if (isOrderBlocked(row)) {
+                return false;
+            }
             return isCellEnabled(columnId, data, row);
         }
 
@@ -242,7 +246,12 @@ public class MixCalcActivity extends BaseActivity {
     private final OnCellTapListener tapListener = new OnCellTapListener() {
         @Override
         public void onCellClick(int row, String columnId) {
-            // 编辑由引擎的 beginEdit 处理，这里无需额外动作
+            // 编辑由引擎的 beginEdit 处理；这里只负责把"顺序录入"被拦的原因告诉用户
+            FeedData data = getData(row);
+            if (data != null && isEditableColumn(columnId) && isCellEnabled(columnId, data, row)
+                    && isOrderBlocked(row)) {
+                showOrderHintDialog();
+            }
         }
 
         @Override
@@ -700,6 +709,11 @@ public class MixCalcActivity extends BaseActivity {
 
             int nextRow = currentRow + 1;
             if (dataList != null && nextRow < dataList.size()) {
+                // 跨行前先过一遍顺序规则：下一行是空行且前面还有空行 → 拦住、停在原格
+                if (isOrderBlocked(nextRow)) {
+                    showOrderHintDialog();
+                    return;
+                }
                 for (int colIndex = 0; colIndex < columnIds.length; colIndex++) {
                     String columnId = columnIds[colIndex];
                     Boolean visible = columnVisibility.get(columnId);
@@ -1483,6 +1497,52 @@ public class MixCalcActivity extends BaseActivity {
         } else {
             return data.getShedCount() > 0;
         }
+    }
+
+    // ==================== 顺序录入（与鸿蒙版一致） ====================
+
+    // 这一行是否已经有输入：棚号非空 或 棚数 > 0
+    private boolean rowHasInput(int row) {
+        FeedData data = getData(row);
+        if (data == null) {
+            return false;
+        }
+        String sn = data.getShedNumber();
+        return (sn != null && !sn.trim().isEmpty()) || data.getShedCount() > 0;
+    }
+
+    // 从第一行往下找，第一个还没输入的行（都填了返回 -1）
+    private int firstEmptyRow() {
+        if (dataList == null) {
+            return -1;
+        }
+        for (int i = 0; i < dataList.size(); i++) {
+            if (!rowHasInput(i)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // 是否被顺序规则拦住：前面还有空行，而这一行本身也是空的
+    // 注意：已经有数据的行永远放行，免得中间清空一行就把后面全挡死
+    private boolean isOrderBlocked(int row) {
+        int firstEmpty = firstEmptyRow();
+        return firstEmpty >= 0 && row > firstEmpty && !rowHasInput(row);
+    }
+
+    // 提示：请先填写第 N 行的「棚号」。样式与鸿蒙一致（70% 宽、标题 18、正文 15、单个绿色按钮）
+    private void showOrderHintDialog() {
+        int firstEmpty = firstEmptyRow();
+        if (firstEmpty < 0) {
+            return;
+        }
+        showStyledConfirmDialog70(
+                getString(R.string.mix_order_title),
+                getString(R.string.mix_order_message, firstEmpty + 1),
+                new String[]{getString(R.string.mix_btn_got_it)},
+                new int[]{0xFF2D8C42},
+                new DialogInterface.OnClickListener[]{null});
     }
 
     private boolean isNonFermentedFeedColumn(String columnId) {

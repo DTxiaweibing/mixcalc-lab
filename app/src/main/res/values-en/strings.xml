@@ -19,6 +19,10 @@
     <string name="mix_col_weigh">Weigh</string>
     <string name="mix_btn_reset">Reset</string>
     <string name="mix_btn_help">Help</string>
+    <string name="mix_order_title">Fill in order</string>
+    <string name="mix_order_message">Please fill the shed number of row %d first.</string>
+    <string name="mix_btn_got_it">Got it</string>
+    <string name="mix_btn_next_row">Next row ▾</string>
     <string name="mix_dialog_switch_done_title">Mix Change Done</string>
     <string name="mix_dialog_switch_done_msg">Fine feed merged into coarse feed. Mix change complete.</string>
     <string name="mix_toast_rebuild_fail">Rebuild failed</string>

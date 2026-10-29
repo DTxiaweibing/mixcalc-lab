@@ -92,6 +92,10 @@
     <string name="mix_switch_ratio_title">换料比例</string>
     <string name="mix_switch_checked">✓</string>
     <string name="mix_btn_help">帮助</string>
+    <string name="mix_order_title">请按顺序录入</string>
+    <string name="mix_order_message">请先填写第%d行的「棚号」。</string>
+    <string name="mix_btn_got_it">知道了</string>
+    <string name="mix_btn_next_row">下一行 ▾</string>
     <string name="mix_menu_open">打开菜单</string>
     <string name="mix_menu_quick_settings">快捷设置</string>
     <string name="mix_menu_privacy_policy">隐私政策</string>
