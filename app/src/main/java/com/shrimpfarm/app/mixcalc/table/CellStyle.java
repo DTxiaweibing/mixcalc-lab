@@ -158,13 +158,15 @@ public class CellStyle {
         if (style == FOOTER_CARMINE) {
             return buttonCarmineFill;
         }
-        return cellFill;
+        // 表尾整行浅绿（与鸿蒙版一致）
+        return 0xFFEAF3EC;
     }
 
     public int footerTextColor(int style) {
         if (style == FOOTER_BLUE || style == FOOTER_CARMINE) {
             return textWhite;
         }
-        return textValue;
+        // 表尾普通格文字用深绿（与鸿蒙版一致，原来是蓝色）
+        return 0xFF1F6B30;
     }
 }
