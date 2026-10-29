@@ -319,6 +319,11 @@ public class MixCalcActivity extends BaseActivity {
         public void onEditNext(int row, String columnId) {
             moveFocusToNextEditableCell(row, getColumnIndex(columnId));
         }
+
+        @Override
+        public void onEditNextRow(int row, String columnId) {
+            moveFocusToNextRow(row, columnId);
+        }
     };
 
     @Override
@@ -737,6 +742,30 @@ public class MixCalcActivity extends BaseActivity {
 
         } catch (Exception e) {
             Log.e(TAG, "移动焦点异常: " + e.getMessage());
+        }
+    }
+
+    // 「下一行 ▾」按钮：同列向下移一行，同样守顺序规则；到底或该列不可编辑就停在原处
+    private void moveFocusToNextRow(int row, String columnId) {
+        try {
+            if (table == null || dataList == null) {
+                return;
+            }
+            int nextRow = row + 1;
+            if (nextRow >= dataList.size()) {
+                return;
+            }
+            if (isOrderBlocked(nextRow)) {
+                showOrderHintDialog();
+                return;
+            }
+            FeedData data = getData(nextRow);
+            if (data == null || !isCellEnabled(columnId, data, nextRow)) {
+                return;
+            }
+            table.beginEdit(nextRow, columnId);
+        } catch (Exception e) {
+            Log.e(TAG, "下一行异常: " + e.getMessage());
         }
     }
 

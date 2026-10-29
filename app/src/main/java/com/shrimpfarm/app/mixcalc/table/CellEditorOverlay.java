@@ -143,6 +143,8 @@ class CellEditorOverlay {
         if (listener != null) {
             listener.onCellEditBegin(row, column.id);
         }
+        // 编辑态右下角显示「下一行 ▾」
+        table.showNextRowButton(row, column.id);
         showIme();
     }
 
@@ -154,6 +156,7 @@ class CellEditorOverlay {
         editing = false;
         commitInternal();
         editText.setVisibility(View.GONE);
+        table.hideNextRowButton();
     }
 
     // 表格滚过之后跟着挪，滚出可见区就结束

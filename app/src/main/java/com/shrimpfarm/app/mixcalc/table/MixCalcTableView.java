@@ -12,7 +12,9 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.OverScroller;
+import android.widget.TextView;
 
+import com.shrimpfarm.app.R;
 import com.shrimpfarm.app.mixcalc.model.FeedData;
 
 import java.util.ArrayList;
@@ -35,6 +37,11 @@ public class MixCalcTableView extends ViewGroup {
     private final TableMetrics metrics = new TableMetrics();
     private final CellStyle style;
     private final CellEditorOverlay editor;
+
+    // 编辑时右下角浮出的「下一行 ▾」按钮（同列向下），不编辑时隐藏
+    private TextView nextRowButton;
+    private int nextRowBtn_row = -1;
+    private String nextRowBtn_columnId = null;
 
     private final OverScroller scroller;
     private final int rowHeight;
@@ -189,6 +196,55 @@ public class MixCalcTableView extends ViewGroup {
         editor.end();
     }
 
+    // ------------------------------------------------------------------
+    // 编辑态右下角的「下一行 ▾」按钮
+    // ------------------------------------------------------------------
+
+    void showNextRowButton(int row, String columnId) {
+        nextRowBtn_row = row;
+        nextRowBtn_columnId = columnId;
+        if (nextRowButton == null) {
+            nextRowButton = new TextView(getContext());
+            nextRowButton.setText(R.string.mix_btn_next_row);
+            nextRowButton.setTextSize(13);
+            nextRowButton.setTextColor(0xFFFFFFFF);
+            nextRowButton.setGravity(android.view.Gravity.CENTER);
+            nextRowButton.setBackgroundResource(R.drawable.bg_pill_green);
+            nextRowButton.setClickable(true);
+            nextRowButton.setOnClickListener(v -> {
+                OnCellEditListener l = editListener;
+                if (l != null && nextRowBtn_row >= 0 && nextRowBtn_columnId != null) {
+                    l.onEditNextRow(nextRowBtn_row, nextRowBtn_columnId);
+                }
+            });
+            addView(nextRowButton);
+        }
+        nextRowButton.setVisibility(View.VISIBLE);
+        layoutNextRowButton();
+    }
+
+    void hideNextRowButton() {
+        nextRowBtn_row = -1;
+        nextRowBtn_columnId = null;
+        if (nextRowButton != null) {
+            nextRowButton.setVisibility(View.GONE);
+        }
+    }
+
+    private void layoutNextRowButton() {
+        if (nextRowButton == null || nextRowButton.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        int w = dp(getContext(), 76);
+        int h = dp(getContext(), 28);
+        int left = getWidth() - w - dp(getContext(), 8);
+        int top = getHeight() - footerHeight - h - dp(getContext(), 6);
+        if (top < headerHeight) {
+            top = headerHeight;
+        }
+        nextRowButton.layout(left, top, left + w, top + h);
+    }
+
     // 格子在表格里的矩形，弹窗拿它当锚点
     public Rect getCellRect(int row, String columnId) {
         if (!metricsReady || metrics.visual.isEmpty()) {
@@ -336,6 +392,7 @@ public class MixCalcTableView extends ViewGroup {
     @Override
     protected void onLayout(boolean changed, int l, int t, int r, int b) {
         editor.layoutChild();
+        layoutNextRowButton();
     }
 
     @Override

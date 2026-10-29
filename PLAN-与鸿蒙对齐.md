@@ -9,7 +9,7 @@ _创建：2026-10-29_
 
 ---
 
-## 1. 棚号输入白名单（仅允许可解析的字符）
+## 1. ✅ 棚号输入白名单（仅允许可解析的字符）
 
 **现状（安卓）**
 - `MixCalcActivity.createTableColumn()` 里 `shed_number` 用 `InputType.TYPE_CLASS_TEXT`，**任何字符都能打进去**。
@@ -56,7 +56,7 @@ if ("shed_number".equals(column.id)) {
 
 ---
 
-## 2. 顺序录入限制（上一行没填，下一行不许输入）
+## 2. ✅ 顺序录入限制（上一行没填，下一行不许输入）
 
 **现状（安卓）**
 - 任意行、任意格都能直接点开编辑。
@@ -77,7 +77,7 @@ if ("shed_number".equals(column.id)) {
 - `MixCalcActivity` 里 `isCellEditable(row, columnId)`（或 `onCellClick` 前）加判断 + 弹窗。
 - 同一套判断必须同时用在 **输入法「下一步」** 和 **「下一行」按钮**（见下面 2.1 / 2.2）。
 
-**2.1 键盘「下一步」也要守同一套规则**
+**2.1 ✅ 键盘「下一步」也要守同一套规则**
 - 现在 `IME_ACTION_NEXT` → `onEditNext(row, columnId)` 只是往右挪一格、行末换下一行，**没有任何拦截**。
 - 改成：在 `onEditNext` 里复用同一段判断——
   - 同行右移：不拦；
@@ -85,7 +85,7 @@ if ("shed_number".equals(column.id)) {
 - 落点：`MixCalcActivity` 里给 table 设置的 `OnCellEditListener.onEditNext` 实现。
 - 验收：第 1、2 行有数据、第 3 行空 → 从第 2 行最后一格按「下一步」→ 弹「请先填写第3行的『棚号』」，光标留在原格，键盘不收起。
 
-**2.2 安卓也要加「下一行 ▾」按钮（对齐鸿蒙）**
+**2.2 ✅ 安卓也要加「下一行 ▾」按钮（对齐鸿蒙）**
 - 鸿蒙版在表格**右下角**有一个绿色胶囊按钮，作用 = **回车向下**（同列下一行）。
 - 样式（照鸿蒙）：
   - 文字 `下一行 ▾`，13sp，白色

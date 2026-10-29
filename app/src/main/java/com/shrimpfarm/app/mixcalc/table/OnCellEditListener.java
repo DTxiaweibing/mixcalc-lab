@@ -14,4 +14,7 @@ public interface OnCellEditListener {
 
     // 输入法点"下一个"（IME_ACTION_NEXT），跳到哪个可编辑格由宿主定
     void onEditNext(int row, String columnId);
+
+    // 点了编辑态右下角的「下一行 ▾」按钮：同列向下，跳到哪一行也由宿主定
+    void onEditNextRow(int row, String columnId);
 }
