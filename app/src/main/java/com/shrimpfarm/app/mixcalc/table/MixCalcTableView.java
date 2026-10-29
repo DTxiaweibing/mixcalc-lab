@@ -454,6 +454,10 @@ public class MixCalcTableView extends ViewGroup {
     // 好处：手速再快也能算，不会像 OverScroller 那样被裁速度或几帧撞边界就停。
     // ------------------------------------------------------------------
 
+    // 惯性手感参数：衰减系数越小越滑；速度上限给足，猛甩别被系统截断
+    private static final float FLING_DECAY = 2.2f;
+    private static final float FLING_MAX_VELOCITY = 25000f;
+
     private boolean flinging;
     private float flingVx;
     private float flingVy;
@@ -471,7 +475,7 @@ public class MixCalcTableView extends ViewGroup {
             float dt = Math.min(0.05f, (now - flingLastTime) / 1000f);
             flingLastTime = now;
 
-            float decay = (float) Math.exp(-4.5 * dt);
+            float decay = (float) Math.exp(-FLING_DECAY * dt);
             flingVx *= decay;
             flingVy *= decay;
 
@@ -608,7 +612,8 @@ public class MixCalcTableView extends ViewGroup {
                 if (dragging) {
                     if (velocityTracker != null) {
                         velocityTracker.addMovement(ev);
-                        velocityTracker.computeCurrentVelocity(1000, maxFlingVelocity);
+                        // 不要用系统的 maxFlingVelocity（通常 8000px/s），猛甩会被截断；给一个够大的上限
+                        velocityTracker.computeCurrentVelocity(1000, FLING_MAX_VELOCITY);
                         float vx = velocityTracker.getXVelocity();
                         float vy = velocityTracker.getYVelocity();
                         startFling(vx, vy);
