@@ -208,7 +208,10 @@ public class MixCalcTableView extends ViewGroup {
             nextRowButton.setText(R.string.mix_btn_next_row);
             nextRowButton.setTextSize(13);
             nextRowButton.setTextColor(0xFFFFFFFF);
+            // 上下居中：去掉字体自带上下留白，否则 28dp 高的胶囊里文字会偏上
+            nextRowButton.setIncludeFontPadding(false);
             nextRowButton.setGravity(android.view.Gravity.CENTER);
+            nextRowButton.setPadding(0, 0, 0, 0);
             nextRowButton.setBackgroundResource(R.drawable.bg_pill_green);
             nextRowButton.setClickable(true);
             nextRowButton.setOnClickListener(v -> {
