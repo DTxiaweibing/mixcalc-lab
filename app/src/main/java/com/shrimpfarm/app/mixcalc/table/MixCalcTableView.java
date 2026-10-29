@@ -39,7 +39,7 @@ public class MixCalcTableView extends ViewGroup {
     private final CellEditorOverlay editor;
 
     // 编辑时右下角浮出的「下一行 ▾」按钮（同列向下），不编辑时隐藏
-    private TextView nextRowButton;
+    private PillButtonView nextRowButton;
     private int nextRowBtn_row = -1;
     private String nextRowBtn_columnId = null;
 
@@ -204,16 +204,9 @@ public class MixCalcTableView extends ViewGroup {
         nextRowBtn_row = row;
         nextRowBtn_columnId = columnId;
         if (nextRowButton == null) {
-            nextRowButton = new TextView(getContext());
-            nextRowButton.setText(R.string.mix_btn_next_row);
-            nextRowButton.setTextSize(13);
-            nextRowButton.setTextColor(0xFFFFFFFF);
-            // 上下居中：去掉字体自带上下留白，否则 28dp 高的胶囊里文字会偏上
-            nextRowButton.setIncludeFontPadding(false);
-            nextRowButton.setGravity(android.view.Gravity.CENTER);
-            nextRowButton.setPadding(0, 0, 0, 0);
-            nextRowButton.setBackgroundResource(R.drawable.bg_pill_green);
-            nextRowButton.setClickable(true);
+            float textSizePx = dp(getContext(), 13);
+            nextRowButton = new PillButtonView(getContext(), 0xFF2D8C42, 0xFFFFFFFF, textSizePx);
+            nextRowButton.setLabel(getContext().getString(R.string.mix_btn_next_row));
             nextRowButton.setOnClickListener(v -> {
                 OnCellEditListener l = editListener;
                 if (l != null && nextRowBtn_row >= 0 && nextRowBtn_columnId != null) {
