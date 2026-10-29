@@ -477,16 +477,28 @@ public class MixCalcTableView extends ViewGroup {
                 return;
             }
             long now = android.os.SystemClock.uptimeMillis();
-            float dt = Math.min(0.05f, (now - flingLastTime) / 1000f);
+            float dt = (now - flingLastTime) / 1000f;
             flingLastTime = now;
+            if (dt <= 0f) {
+                postOnAnimation(this);
+                return;
+            }
+            if (dt > 0.25f) {
+                dt = 0.25f;   // 卡顿/切后台回来时别一步跳太远
+            }
 
-            // 指数衰减：v(t) = v0 * e^(-k t)，位移积分 = v0/k，正好在目标距离处速度趋于 0
-            flingVx *= (float) Math.exp(-flingKx * dt);
-            flingVy *= (float) Math.exp(-flingKy * dt);
+            // 解析积分：v(t)=v0·e^(-k·t)，这一段应该走多远 = (v0/k)·(1-e^(-k·dt))
+            // 用解析解而不是 v*dt，掉帧时距离也不会算少（这是"猛甩滑不远"的元凶之一）
+            float ex = (float) Math.exp(-flingKx * dt);
+            float ey = (float) Math.exp(-flingKy * dt);
+            float moveX = flingKx > 0f ? (flingVx / flingKx) * (1f - ex) : 0f;
+            float moveY = flingKy > 0f ? (flingVy / flingKy) * (1f - ey) : 0f;
+            flingVx *= ex;
+            flingVy *= ey;
 
             // 用累加器保留小数，避免小步长被 int 截断后"走不动"
-            flingAccX -= flingVx * dt;
-            flingAccY -= flingVy * dt;
+            flingAccX -= moveX;
+            flingAccY -= moveY;
             int stepX = (int) flingAccX;
             int stepY = (int) flingAccY;
             flingAccX -= stepX;
