@@ -454,13 +454,18 @@ public class MixCalcTableView extends ViewGroup {
     // 好处：手速再快也能算，不会像 OverScroller 那样被裁速度或几帧撞边界就停。
     // ------------------------------------------------------------------
 
-    // 惯性手感参数：衰减系数越小越滑；速度上限给足，猛甩别被系统截断
-    private static final float FLING_DECAY = 2.2f;
+    // 惯性手感参数
+    //   FLING_NATURAL_K：自然减速曲线（总距离 = 初速度 / K），跟鸿蒙同一套手感
+    //   FLING_MAX_VELOCITY：测速上限，别被系统默认 8000px/s 截断（猛甩会丢惯性）
+    private static final float FLING_NATURAL_K = 4.5f;
     private static final float FLING_MAX_VELOCITY = 25000f;
 
     private boolean flinging;
     private float flingVx;
     private float flingVy;
+    // 每个轴自己的衰减系数：由「初速度 + 要走的距离、末速必须为 0」反解出来 k = v0 / 距离
+    private float flingKx;
+    private float flingKy;
     private float flingAccX;
     private float flingAccY;
     private long flingLastTime;
@@ -475,9 +480,9 @@ public class MixCalcTableView extends ViewGroup {
             float dt = Math.min(0.05f, (now - flingLastTime) / 1000f);
             flingLastTime = now;
 
-            float decay = (float) Math.exp(-FLING_DECAY * dt);
-            flingVx *= decay;
-            flingVy *= decay;
+            // 指数衰减：v(t) = v0 * e^(-k t)，位移积分 = v0/k，正好在目标距离处速度趋于 0
+            flingVx *= (float) Math.exp(-flingKx * dt);
+            flingVy *= (float) Math.exp(-flingKy * dt);
 
             // 用累加器保留小数，避免小步长被 int 截断后"走不动"
             flingAccX -= flingVx * dt;
@@ -508,25 +513,60 @@ public class MixCalcTableView extends ViewGroup {
         }
     };
 
+    // 给定初速度 v0 和这个方向还剩多少距离 runway：
+    //   自然距离 = v0 / FLING_NATURAL_K
+    //   实际距离 = min(自然距离, runway)          ← 跑不完就刚好停在边上
+    //   衰减系数 k = v0 / 实际距离                 ← 末速度正好是 0
     private void startFling(float vx, float vy) {
         stopFling();
         int startThreshold = dp(getContext(), 60);
         if (Math.abs(vx) < startThreshold && Math.abs(vy) < startThreshold) {
             return;
         }
-        flinging = true;
+        // vx > 0 表示手指向右甩，内容往左走（offset 减小）
+        int runwayX = vx > 0 ? offsetX : (metrics.maxScrollX - offsetX);
+        int runwayY = vy > 0 ? offsetY : (metrics.maxScrollY - offsetY);
+
         flingVx = vx;
         flingVy = vy;
+        flingKx = computeFlingK(vx, runwayX);
+        flingKy = computeFlingK(vy, runwayY);
+        if (flingVx != 0 && flingKx <= 0f) {
+            flingVx = 0f;
+        }
+        if (flingVy != 0 && flingKy <= 0f) {
+            flingVy = 0f;
+        }
+        if (flingVx == 0f && flingVy == 0f) {
+            return;
+        }
+
+        flinging = true;
         flingAccX = 0f;
         flingAccY = 0f;
         flingLastTime = android.os.SystemClock.uptimeMillis();
         postOnAnimation(flingRunnable);
     }
 
+    private float computeFlingK(float v, int runway) {
+        float absV = Math.abs(v);
+        if (absV <= 0f || runway <= 0) {
+            return 0f;
+        }
+        float natural = absV / FLING_NATURAL_K;      // 这个速度"自然"该滑多远
+        float distance = Math.min(natural, runway);  // 但不能越过边界
+        if (distance < 1f) {
+            return 0f;
+        }
+        return absV / distance;
+    }
+
     private void stopFling() {
         flinging = false;
         flingVx = 0f;
         flingVy = 0f;
+        flingKx = 0f;
+        flingKy = 0f;
         flingAccX = 0f;
         flingAccY = 0f;
         removeCallbacks(flingRunnable);
