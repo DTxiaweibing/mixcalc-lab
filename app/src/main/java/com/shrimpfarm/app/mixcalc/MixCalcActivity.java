@@ -259,7 +259,7 @@ public class MixCalcActivity extends BaseActivity {
                 return;
             }
             if (isOrderBlocked(row) || needsShedNumberFirst(row, columnId)) {
-                showOrderHintDialog(row);
+                showOrderHintDialog();
             }
         }
 
@@ -1596,15 +1596,10 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     // 提示：请先填写第 N 行的「棚号」。样式与鸿蒙一致（70% 宽、标题 18、正文 15、单个绿色按钮）
+    // 注意：N 永远是"最靠前的空行"，不是被点的那一行。
+    // 例：第 1 行空着，点第 5 行 → 提示填写第 1 行的棚号。
     private void showOrderHintDialog() {
-        showOrderHintDialog(-1);
-    }
-
-    private void showOrderHintDialog(int row) {
-        int target = row;
-        if (target < 0) {
-            target = firstEmptyRow();
-        }
+        int target = firstEmptyRow();
         if (target < 0) {
             return;
         }
