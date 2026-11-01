@@ -20,8 +20,8 @@ android {
         namespace "com.shrimpfarm.app"
         minSdkVersion 28
         targetSdkVersion 36
-        versionCode 7
-        versionName "0.3.4"
+        versionCode 8
+        versionName "0.3.5"
         multiDexEnabled true
     }
     compileOptions {
@@ -42,6 +42,13 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // 调试包也用发布密钥签名：调试包和 release 包可以互相覆盖安装、共用同一份数据，
+            // 不会再出现「签名不一致，请先卸载」。没有 keystore.properties 的机器自动回退默认调试签名。
+            if (hasSigningConfig) {
+                signingConfig signingConfigs.release
+            }
+        }
         release {
             minifyEnabled false
             if (hasSigningConfig) {

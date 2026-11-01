@@ -217,3 +217,73 @@ isTabletMode = true
 
 > 真机矩阵（折叠/展开、平板、分屏、各输入法）本机无法执行，需在设备上按上面两张清单过一遍再发 0.3.5。
 
+---
+
+## 发版注意事项：两个同名的 debug.keystore（2026-11-01 排查）
+
+真机复测时出现「新包装不上、提示签名不一致、只能先卸载旧版」，排查结论如下。
+
+### 机器上有两个同名但不同的密钥库
+
+| 文件 | 大小 | 证书 CN | SHA-256 | 用途 |
+|---|---|---|---|---|
+| `C:\Users\Administrator\.android\debug.keystore` | 2.6 KB | `Android Debug` | `61f01d29…cf6f` | Android Studio 直接 Run 的**调试包**默认用它 |
+| `D:\应用软件\安卓应用\debug.keystore` | 1.3 KB | `夏卫兵` | `d68ac3d8…ac76` | **正式发布密钥**（`keystore.properties` 指向它） |
+
+两个文件都叫 `debug.keystore`，但**不是同一把钥匙**。之前手机上装的如果是 Android Studio 直接 Run 的调试包，
+再装 release 包就会签名冲突，必须先卸载。
+
+### 排除的猜测
+
+「以前只有 v2 签名、现在多了 v1/v3」不成立。实测两个包都是**只有 v2**：
+
+```
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+```
+
+### 与线上一致性
+
+| 对象 | SHA-256 |
+|---|---|
+| `D:\应用软件\安卓应用\debug.keystore` | `d68ac3d8…ac76` |
+| `upload_certificate.pem`（上传市场用） | `d68ac3d8…ac76` |
+| 旧上传包 `upload_00ee68a7….apk`（0.3 / versionCode 3） | `d68ac3d8…ac76` |
+| 0.3.5 release 包 | `d68ac3d8…ac76` |
+
+四者一致，说明**发布密钥没变**，市场升级不受影响。
+
+### 结论与建议
+
+- 以后手机上的测试包统一用 **release 包**（`assembleRelease` 产物），不要和 Android Studio 直接 Run 的调试包混装；
+- 换包前可用 `apksigner verify --print-certs <apk>` 看 CN 是不是 `夏卫兵`；
+- `D:\应用软件\安卓应用\debug.keystore` 是正式密钥，**只备份、绝不重新生成**；丢失后该应用将无法再更新。
+
+### 已修：调试包也改用发布密钥
+
+`app/build.gradle` 的 `debug` 构建也指定 `signingConfigs.release`：
+
+```gradle
+buildTypes {
+    debug {
+        if (hasSigningConfig) { signingConfig signingConfigs.release }
+    }
+    release { ... }
+}
+```
+
+验证（重新 `assembleDebug` 后验签）：
+
+```
+app/build/outputs/apk/debug/app-debug.apk
+→ DN: C=, ..., CN=夏卫兵
+→ SHA-256: d68ac3d800da57bfea0b02f692d6d40696ee7565cc2c836ad76773fb90edac76
+```
+
+现在调试包与 release 包证书一致，可以互相覆盖安装、共用同一份数据；
+换到没有 `keystore.properties` 的机器上仍会自动回退到 Android 默认调试签名。
+
+另：Android Studio 手动导出的 `app/release/app-release.apk`（0.3.4 / versionCode 7）
+验签结果与 CI 打的包一致（CN=夏卫兵，`d68ac3d8…ac76`，仅 v2 方案），可佐证发布密钥从未变过。
+
