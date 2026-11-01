@@ -1,34 +1,25 @@
 package com.shrimpfarm.app.mixcalc.table;
 
-import android.content.Context;
-import android.util.DisplayMetrics;
-import android.util.Log;
-
 /**
  * 平板/手机的列宽计算。纯计算，不持有 Activity 状态。
  */
 public final class TabletLayout {
 
-    private static final String TAG = "TabletLayout";
+    /** 平板布局的最小窗口宽度（dp）。低于它一律按手机布局：固定列宽 + 横向滚动。 */
+    public static final int TABLET_MIN_WIDTH_DP = 600;
 
     private TabletLayout() {
     }
 
-    /** 最小宽度 ≥ 600dp，或对角线 ≥ 7 英寸，判定为平板。 */
-    public static boolean isTabletDevice(Context context) {
-        try {
-            if (context.getResources().getConfiguration().smallestScreenWidthDp >= 600) {
-                return true;
-            }
-            DisplayMetrics metrics = context.getResources().getDisplayMetrics();
-            float widthInches = metrics.widthPixels / metrics.xdpi;
-            float heightInches = metrics.heightPixels / metrics.ydpi;
-            double diagonal = Math.sqrt(Math.pow(widthInches, 2) + Math.pow(heightInches, 2));
-            return diagonal >= 7.0;
-        } catch (Exception e) {
-            Log.e(TAG, "检测平板设备异常: " + e.getMessage());
-            return false;
-        }
+    /**
+     * 按**当前窗口宽度**判定用平板布局还是手机布局。
+     *
+     * <p>不能用设备类型判断：折叠屏展开时是平板，折叠成外屏后只有 370dp 左右，
+     * 但设备本身（对角线、smallestScreenWidthDp）没变，会把 11 列硬压进窄屏。
+     * 这里只看当前窗口宽度，折叠/展开、分屏、转屏都跟着窗口走。
+     */
+    public static boolean isTabletWidth(int widthDp) {
+        return widthDp >= TABLET_MIN_WIDTH_DP;
     }
 
     /** 手机模式：dp 固定宽度转 px。 */

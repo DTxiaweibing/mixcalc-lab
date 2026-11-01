@@ -62,4 +62,36 @@ public class TabletLayoutTest {
         assertFalse(TabletLayout.fillsAllColumns(null, COLUMN_IDS, null, 1080, 3f, false));
         assertFalse(TabletLayout.fillsAllColumns(WIDTHS_DP, COLUMN_IDS, allVisible(), 0, 3f, false));
     }
+
+    /** 布局模式只看当前窗口宽度：窄于 600dp 一律手机布局。 */
+    @Test
+    public void narrowWindowIsPhoneLayout() {
+        assertFalse(TabletLayout.isTabletWidth(360));
+        assertFalse(TabletLayout.isTabletWidth(480));
+        assertFalse(TabletLayout.isTabletWidth(599));
+    }
+
+    /** 600dp 起算平板布局。 */
+    @Test
+    public void wideWindowIsTabletLayout() {
+        assertTrue(TabletLayout.isTabletWidth(600));
+        assertTrue(TabletLayout.isTabletWidth(800));
+        assertTrue(TabletLayout.isTabletWidth(1200));
+    }
+
+    /**
+     * 折叠屏回归：X QFOLD6 折叠成外屏约 370dp。
+     * 设备本身是折叠屏（对角线远超 7 英寸），但窗口只有 370dp，必须按手机布局，
+     * 否则 computeWidths() 会把 11 列硬压进 370dp，出现「外屏 11 列全显示」。
+     */
+    @Test
+    public void foldedOuterScreenUsesPhoneLayout() {
+        int widthDp = 370;
+        assertFalse(TabletLayout.isTabletWidth(widthDp));
+
+        // 手机布局下 11 列合计 600dp 放不下 → 保留快捷设置（用户有藏列的入口）
+        int screenWidthPx = Math.round(widthDp * 3f);
+        assertFalse(TabletLayout.fillsAllColumns(
+                WIDTHS_DP, COLUMN_IDS, allVisible(), screenWidthPx, 3f, false));
+    }
 }

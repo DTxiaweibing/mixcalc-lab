@@ -458,10 +458,6 @@ public class MixCalcActivity extends BaseActivity {
         // 水比与发酵开关跟随批次，见 bindCurrentBatch()
     }
 
-    private boolean isTabletDevice(Context context) {
-        return TabletLayout.isTabletDevice(context);
-    }
-
     // 从 SharedPreferences 同步加载已保存数据（数据量小，主线程解析）
     private void loadSavedData() {
         List<Batch> loaded = MixCalcPrefs.loadBatches(this, TOTAL_ROWS);
@@ -814,7 +810,6 @@ public class MixCalcActivity extends BaseActivity {
 
     // 窗口尺寸/形态变了：重算平板判定与列宽，旧菜单直接关掉，下次打开按新窗口判断。
     private void onWindowMetricsChanged() {
-        isTabletMode = isTabletDevice(this);
         initTabletAdaptiveSettings();
         dismissOpenPopups();
         rebuildCompleteTable();
@@ -935,8 +930,11 @@ public class MixCalcActivity extends BaseActivity {
     // ==================== 平板自适应 ====================
 
     private void initTabletAdaptiveSettings() {
-        isTabletMode = TabletLayout.isTabletDevice(this);
         float density = getResources().getDisplayMetrics().density;
+        int widthDp = Math.round(getScreenWidth() / density);
+        isTabletMode = TabletLayout.isTabletWidth(widthDp);
+        Log.i(TAG, "布局模式: " + (isTabletMode ? "平板" : "手机")
+                + ", 窗口宽 " + widthDp + "dp (阈值 " + TabletLayout.TABLET_MIN_WIDTH_DP + "dp)");
         if (isTabletMode) {
             adaptiveColumnWidths = TabletLayout.computeWidths(
                     columnWidths, columnIds, visibleColumns(), getScreenWidth(), density);

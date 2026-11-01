@@ -6,6 +6,11 @@
 
 _开始：2026-11-01_
 
+## 范围决定
+
+- **6.1（保存节流 + 主文件备份）本轮不做，延后。** 原因：2 批次 × 30 行数据量下节流收益很小；备份真正的问题是“解析失败会立刻用空表覆盖原数据”，建议随 P2.1 数据模型迁移一起做（那时迁移风险最大，最需要快照保护）。
+- **发版节奏**：先在真机按下面的验收清单过一遍；通过后把版本从 `0.3.4 / versionCode 7` 调到 `0.3.5 / versionCode 8`，再重新打 release 包发包。
+
 ---
 
 ## P0 快捷设置：窗口自适应 + 铺满 11 列时隐藏
@@ -111,6 +116,88 @@ _开始：2026-11-01_
 
 ---
 
+## P0 补充修复：折叠屏外屏仍按平板布局（X QFOLD6 实测发现）
+
+### 现象
+
+用户在 X QFOLD6 云调试上实测：内屏展开时 11 列正常，**折叠成外屏后仍然是 11 列挤在一起**，
+每列只有 30dp 左右，字都压扁了，而且菜单里没有「快捷设置」，用户也没有藏列的入口。
+
+### 根因
+
+`TabletLayout.isTabletDevice(Context)` 用了两条判据：
+
+```java
+if (configuration.smallestScreenWidthDp >= 600) return true;   // ← 折叠后不成立
+float diagonal = sqrt(wInch² + hInch²);
+return diagonal >= 7.0;                                        // ← 折叠后仍然成立
+```
+
+折叠屏的**物理对角线**不会因为折叠而改变（这台机 7 英寸以上），所以无论内屏还是外屏，
+`isTabletMode` 永远是 `true`。于是：
+
+```
+isTabletMode = true
+→ computeWidths() 按可见列数均分 370dp
+→ 11 列 × 约 33dp，且末段整体缩放到屏宽
+→ fillsAllColumns() 返回 true（平板布局总能铺满）
+→ 菜单隐藏「快捷设置」，用户无法藏列
+```
+
+也就是说：判据用的是**设备类型**，而不是**当前窗口**。
+
+### 改了什么
+
+| 文件 | 改动 |
+|---|---|
+| `TabletLayout` | 删除 `isTabletDevice(Context)`（连同 `Context`/`DisplayMetrics`/`Log` 依赖），改为纯计算 `TABLET_MIN_WIDTH_DP = 600` + `isTabletWidth(int widthDp)` |
+| `MixCalcActivity.initTabletAdaptiveSettings()` | `widthDp = round(getScreenWidth() / density)`，`isTabletMode = TabletLayout.isTabletWidth(widthDp)`；判据从「设备」改成「当前窗口」 |
+| `MixCalcActivity.initTabletAdaptiveSettings()` | 加 `Log.i`：输出当前窗口宽度 dp、阈值、最终布局模式，方便下次云调试直接看日志确认 |
+| `MixCalcActivity.onWindowMetricsChanged()` | 删掉多余的 `isTabletMode = isTabletDevice(this)`（`initTabletAdaptiveSettings()` 内部已经算） |
+| `MixCalcActivity` | 删除已无用的私有 helper `isTabletDevice(Context)` |
+
+`TabletLayout` 现在没有任何 Android 依赖，单测跑得更快，也更容易保证正确性。
+
+### 关键判断
+
+- **为什么用 600dp 而不是「自然宽 600dp 放得下」**：两者在默认列宽下数值一样，但语义不同。
+  600dp 是 Android 的平板分界，也是"11 列按最小可读宽度排开"的下限；用它当布局模式开关，
+  和 `fillsAllColumns()`（是否还要提供藏列入口）分开，互不干扰。
+- **外屏 370dp 走手机布局后会发生什么**：`fixedWidths()` 得到 600dp 总宽 → 横向滚动。
+  这是手机上一贯的行为，用户已经熟悉；同时 `fillsAllColumns()` 返回 false，菜单恢复「快捷设置」，
+  用户可以藏掉不需要的列，把剩下的列放大到铺满。
+- **不再有"设备级"开关**：分屏（半屏 400dp）、自由窗口拖拽也会正确切回手机布局。
+
+### 验证
+
+```
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --offline
+→ BUILD SUCCESSFUL in 20s
+→ TabletLayoutTest: tests=8 failures=0 errors=0
+→ PopupGeometryTest: tests=5 failures=0 errors=0
+```
+
+新增 3 个用例（`TabletLayoutTest`）：
+
+| 用例 | 期望 |
+|---|---|
+| `narrowWindowIsPhoneLayout` | 360 / 480 / 599 → 手机布局 |
+| `wideWindowIsTabletLayout` | 600 / 800 / 1200 → 平板布局 |
+| `foldedOuterScreenUsesPhoneLayout` | 370dp：不是平板布局，且 11 列放不下 → 保留快捷设置 |
+
+**测试有效性检查**：把 `isTabletWidth()` 临时改成 `return true`（等价于修复前的行为），
+`foldedOuterScreenUsesPhoneLayout` 与 `narrowWindowIsPhoneLayout` 立刻失败；改回后 8/8 通过。
+说明用例确实锁住了这次回归。
+
+### 还差什么（真机）
+
+- [ ] X QFOLD6 外屏（约 370dp）：应为手机布局、横向滚动、菜单有「快捷设置」；
+- [ ] X QFOLD6 内屏：仍为平板布局、11 列铺满、菜单无「快捷设置」；
+- [ ] 反复折叠/展开 5 次，两种布局切换正常，不残留旧列宽；
+- [ ] 云调试日志里能看到 `布局模式: 手机/平板, 窗口宽 xxx dp (阈值 600dp)`。
+
+---
+
 ## 本轮验证汇总
 
 | 步骤 | 命令 | 结果 |
@@ -118,13 +205,15 @@ _开始：2026-11-01_
 | P0 编译 | `gradlew :app:compileDebugJavaWithJavac --offline` | BUILD SUCCESSFUL |
 | P0 单测 | `gradlew :app:testDebugUnitTest` | 5/5 通过（另有变异检查证明用例有效） |
 | P1 编译 + 单测 + 打包 | `gradlew :app:testDebugUnitTest :app:assembleDebug --offline` | BUILD SUCCESSFUL，10/10 通过 |
+| 折叠屏修复 | `gradlew :app:testDebugUnitTest :app:assembleDebug --offline` | BUILD SUCCESSFUL，13/13 通过（变异检查失败 2 个用例） |
 
 代码规范自检（`check-limits.ps1`，app/src）：
 
 - `MixCalcActivity.java` 有效行 1735（改动前 1751，净减 16 行），没有净增长；
 - `showColumnSettingsPopup()` 90 行（原 92 行）；
 - `showMainMenu()` 已退出超长名单（原 55 行）；
-- 新增文件 `PopupGeometry.java`、两个测试文件均未超限。
+- 新增文件 `PopupGeometry.java`、两个测试文件均未超限；
+- 折叠屏修复后又跑了一次：`MixCalcActivity.java` 仍为 1735 行（删掉 `isTabletDevice()` helper，原始行数 2611 → 2609），`TabletLayout.java` 反而更短且不再依赖 Android。
 
 > 真机矩阵（折叠/展开、平板、分屏、各输入法）本机无法执行，需在设备上按上面两张清单过一遍再发 0.3.5。
 
