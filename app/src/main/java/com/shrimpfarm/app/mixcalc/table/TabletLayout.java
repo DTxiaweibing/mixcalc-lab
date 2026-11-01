@@ -78,6 +78,37 @@ public final class TabletLayout {
     }
 
     /**
+     * 表格是否已经铺满全部列：全部列可见，且按当前布局算出来的自然总宽放得下。
+     * 满足时说明没必要再提供「快捷设置」（没有列要藏），折叠/展开、分屏都按实时窗口算。
+     *
+     * @param tabletMode 平板/宽窗口布局（按可见列均分）还是手机固定列宽
+     */
+    public static boolean fillsAllColumns(int[] widthsDp, String[] columnIds, boolean[] visible,
+                                          int screenWidthPx, float density, boolean tabletMode) {
+        if (widthsDp == null || widthsDp.length == 0 || screenWidthPx <= 0) {
+            return false;
+        }
+        for (int i = 0; i < widthsDp.length; i++) {
+            boolean shown = visible == null || i >= visible.length || visible[i];
+            if (!shown) {
+                return false; // 还有列被藏起来，快捷设置要留着
+            }
+        }
+        int total = 0;
+        if (tabletMode) {
+            int[] widths = computeWidths(widthsDp, columnIds, visible, screenWidthPx, density);
+            for (int width : widths) {
+                total += width;
+            }
+        } else {
+            for (int widthDp : widthsDp) {
+                total += Math.round(widthDp * density);
+            }
+        }
+        return total <= screenWidthPx;
+    }
+
+    /**
      * 平板模式：按可见列数均分屏宽，再按列语义微调，最后整体缩放到屏宽。
      *
      * @param widthsDp  基础宽度（dp），仅用于列数

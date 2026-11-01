@@ -53,6 +53,7 @@ import com.shrimpfarm.app.mixcalc.table.OnCellEditListener;
 import com.shrimpfarm.app.mixcalc.table.OnCellTapListener;
 import com.shrimpfarm.app.mixcalc.table.TableColumn;
 import com.shrimpfarm.app.mixcalc.table.TableColumnConfig;
+import com.shrimpfarm.app.mixcalc.ui.PopupGeometry;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -97,6 +98,10 @@ public class MixCalcActivity extends BaseActivity {
     private final Map<String, Boolean> columnVisibility = new HashMap<String, Boolean>();
     private final Map<String, Boolean> columnFixed = new HashMap<String, Boolean>();
     private PopupWindow columnSettingsPopup;
+    // 打开着的主菜单：折叠/展开、分屏、转屏时直接关掉，避免停留在旧宽度/旧状态
+    private PopupWindow mainMenuPopup;
+    // 上次的主容器宽度：有些设备改窗口大小不触发 onConfigurationChanged，这里兜底重算
+    private int lastWindowWidth;
     private final String[] columnIds = {
         "seq", "shed_number", "shed_count", "average_feed", 
         "fermented", "powder", "feed03", "feed05", "feed10", 
@@ -797,9 +802,31 @@ public class MixCalcActivity extends BaseActivity {
     @Override
     public void onConfigurationChanged(android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        onWindowMetricsChanged();
+    }
+
+    @Override
+    public void onMultiWindowModeChanged(boolean isInMultiWindowMode,
+                                         android.content.res.Configuration newConfig) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig);
+        onWindowMetricsChanged();
+    }
+
+    // 窗口尺寸/形态变了：重算平板判定与列宽，旧菜单直接关掉，下次打开按新窗口判断。
+    private void onWindowMetricsChanged() {
         isTabletMode = isTabletDevice(this);
         initTabletAdaptiveSettings();
+        dismissOpenPopups();
         rebuildCompleteTable();
+    }
+
+    private void dismissOpenPopups() {
+        if (mainMenuPopup != null) {
+            mainMenuPopup.dismiss();
+        }
+        if (columnSettingsPopup != null) {
+            columnSettingsPopup.dismiss();
+        }
     }
 
     // 更新统计行
@@ -927,6 +954,38 @@ public class MixCalcActivity extends BaseActivity {
         TabletLayout.fillToWidth(adaptiveColumnWidths, visibleColumns(), getScreenWidth());
     }
 
+    /**
+     * 表格是否已经铺满全部列：全部可见 + 自然宽度放得下。
+     * 满足时菜单不再出现「快捷设置」；折叠/展开、分屏后按实时窗口重新判断。
+     */
+    private boolean isElevenColumnsFilled() {
+        return TabletLayout.fillsAllColumns(columnWidths, columnIds, visibleColumns(),
+                getScreenWidth(), getResources().getDisplayMetrics().density, isTabletMode);
+    }
+
+    // 折叠/分屏/窗口拖拽时不一定触发 onConfigurationChanged，这里按主容器宽度兜底重算。
+    private void installWindowSizeWatcher() {
+        View main = findViewById(R.id.main_layout);
+        if (main == null) {
+            return;
+        }
+        main.addOnLayoutChangeListener((v, left, top, right, bottom,
+                                        oldLeft, oldTop, oldRight, oldBottom) -> {
+            int width = right - left;
+            if (width <= 0) {
+                return;
+            }
+            if (lastWindowWidth == 0) {
+                lastWindowWidth = width; // 首次布局只记录，不重复重建
+                return;
+            }
+            if (width != lastWindowWidth) {
+                lastWindowWidth = width;
+                onWindowMetricsChanged();
+            }
+        });
+    }
+
     /** 当前可见性数组，缺失的列按可见处理。 */
     private boolean[] visibleColumns() {
         boolean[] visible = new boolean[columnIds.length];
@@ -962,6 +1021,7 @@ public class MixCalcActivity extends BaseActivity {
             // 菜单按钮（下拉：快捷设置 / 隐私政策 / 用户协议 / 使用帮助）
             View menuBtn = findViewById(R.id.btn_menu);
             menuBtn.setOnClickListener(v -> showMainMenu());
+            installWindowSizeWatcher();
         } catch (Exception e) {
             Log.e(TAG, "initViews异常: " + e.getMessage());
         }
@@ -1067,11 +1127,10 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     private void loadColumnVisibility() {
-        boolean forceVisible = isTabletDevice(this);
         for (int i = 0; i < columnIds.length; i++) {
             String id = columnIds[i];
             Boolean stored = columnVisibility.get(id);
-            columnVisibility.put(id, forceVisible || stored == null || stored);
+            columnVisibility.put(id, stored == null || stored);
         }
     }
 
@@ -1302,22 +1361,34 @@ public class MixCalcActivity extends BaseActivity {
             }
         }
 
-        DisplayMetrics dm = getResources().getDisplayMetrics();
-        popup.setWidth(Math.min(dm.widthPixels, dpToPx(180)));
+        popup.setWidth(listPopupWidth());
         popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
         return popup;
     }
 
-    /** 锚定在指定格子下方显示（水比 / 发酵料 / 列操作）。 */
+    // 列表弹窗宽度：水比 / 发酵料 / 列操作 / 批次子菜单共用；定位时用同一个宽度算右边缘
+    private int listPopupWidth() {
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        return Math.min(dm.widthPixels, dpToPx(180));
+    }
+
+    /** 锚定在指定格子下方显示（水比 / 发酵料 / 列操作），右边缘贴住单元格右边缘。 */
     private void showAnchoredListDialog(String title, String[] items, Rect cellRect,
                                         final DialogInterface.OnClickListener listener) {
         try {
             PopupWindow popup = createListPopup(title, items, listener);
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            int popupWidth = listPopupWidth();
             int[] loc = new int[2];
             if (table != null) {
                 table.getLocationOnScreen(loc);
             }
-            int x = loc[0] + (cellRect != null ? cellRect.left : 0);
+            int x;
+            if (cellRect == null) {
+                x = loc[0];
+            } else {
+                x = PopupGeometry.rightAlignedX(loc[0] + cellRect.right, popupWidth, dm.widthPixels);
+            }
             int y = loc[1] + (cellRect != null ? cellRect.bottom : 0);
             popup.showAtLocation(table, Gravity.NO_GRAVITY, x, y);
         } catch (Exception e) {
@@ -2029,7 +2100,7 @@ public class MixCalcActivity extends BaseActivity {
         int[] loc = new int[2];
         anchorRow.getLocationOnScreen(loc);
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        int width = Math.min(dm.widthPixels, dpToPx(180));
+        int width = listPopupWidth();
         int x = Math.min(loc[0] + anchorRow.getWidth(), dm.widthPixels - width);
         int y = loc[1];
         View anchor = findViewById(R.id.main_layout);
@@ -2116,17 +2187,11 @@ public class MixCalcActivity extends BaseActivity {
             popup.setOutsideTouchable(true);
             popup.setFocusable(true);
             popup.setElevation(10);
+            mainMenuPopup = popup;
+            popup.setOnDismissListener(() -> mainMenuPopup = null);
 
-            // 快捷设置：平板不显示（隐藏后由批次行顶上，行高统一由 fitMenuRowHeights 处理）
-            if (isTabletMode) {
-                popupView.findViewById(R.id.menu_item_quick_settings).setVisibility(View.GONE);
-                popupView.findViewById(R.id.menu_divider_quick).setVisibility(View.GONE);
-            } else {
-                popupView.findViewById(R.id.menu_item_quick_settings).setOnClickListener(v -> {
-                    popup.dismiss();
-                    showColumnSettingsPopup();
-                });
-            }
+            // 快捷设置：表格已经铺满 11 列时不显示（隐藏后由批次行顶上，行高统一由 fitMenuRowHeights 处理）
+            configureQuickSettingsItem(popupView, popup);
 
             fitMenuRowHeights(popupView);
 
@@ -2183,6 +2248,21 @@ public class MixCalcActivity extends BaseActivity {
         } catch (Exception e) {
             Log.e(TAG, "显示主菜单异常: " + e.getMessage());
         }
+    }
+
+    // 表格已经铺满 11 列（没有列要藏）时不显示「快捷设置」；每次打开菜单都按当前窗口重算。
+    private void configureQuickSettingsItem(View popupView, final PopupWindow popup) {
+        View quickItem = popupView.findViewById(R.id.menu_item_quick_settings);
+        View quickDivider = popupView.findViewById(R.id.menu_divider_quick);
+        if (isElevenColumnsFilled()) {
+            quickItem.setVisibility(View.GONE);
+            quickDivider.setVisibility(View.GONE);
+            return;
+        }
+        quickItem.setOnClickListener(v -> {
+            popup.dismiss();
+            showColumnSettingsPopup();
+        });
     }
 
     // ==================== 首次启动隐私同意弹窗 ====================
@@ -2412,9 +2492,8 @@ public class MixCalcActivity extends BaseActivity {
             popup.setFocusable(true);
             popup.setElevation(10);
 
-            DisplayMetrics dm = getResources().getDisplayMetrics();
-            int maxWidth = (int) (360 * dm.density);
-            popup.setWidth(Math.min(dm.widthPixels, maxWidth));
+            // 左右铺满当前窗口：折叠/展开、分屏后跟着窗口宽度走，不再固定 360dp
+            popup.setWidth(PopupGeometry.fullWidth(getScreenWidth()));
             popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
 
             popupView.findViewById(R.id.btn_cancel_all).setOnClickListener(v -> popup.dismiss());

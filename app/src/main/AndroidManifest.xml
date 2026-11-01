@@ -18,6 +18,7 @@
             android:name=".mixcalc.MixCalcActivity"
             android:theme="@style/AppTheme.NoWindowBackground"
             android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboard|keyboardHidden|navigation|uiMode|layoutDirection"
             android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
