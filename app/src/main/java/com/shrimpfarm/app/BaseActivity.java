@@ -25,7 +25,12 @@ public abstract class BaseActivity extends AppCompatActivity {
     @Override
     protected void attachBaseContext(Context newBase) {
         // 用户手动选过语言的话，在这里套上，覆盖系统默认
-        super.attachBaseContext(LocaleManager.applyLocale(newBase));
+        Context localized = LocaleManager.applyLocale(newBase);
+        // 字号固定：不跟随系统「字体大小」设置，和鸿蒙版保持一致
+        android.content.res.Configuration config =
+                new android.content.res.Configuration(localized.getResources().getConfiguration());
+        config.fontScale = 1.0f;
+        super.attachBaseContext(localized.createConfigurationContext(config));
     }
 
     @Override

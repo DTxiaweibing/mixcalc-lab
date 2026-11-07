@@ -262,6 +262,11 @@ public class MixCalcTableView extends ViewGroup {
         return new Rect(x, y, x + col.widthPx, y + metrics.rowHeight);
     }
 
+    // 表尾行高度（px）：弹窗最多长到表尾上沿，再高就内部滚动
+    public int getFooterHeightPx() {
+        return metricsReady ? metrics.footerHeight : 0;
+    }
+
     public Rect getHeaderRect(String columnId) {
         if (!metricsReady || metrics.visual.isEmpty()) {
             return null;
@@ -916,7 +921,79 @@ public class MixCalcTableView extends ViewGroup {
                 style.bodyFill(state), style.bodyStroke(state), style.bodyStrokeWidth(state));
 
         String text = textProvider == null ? "" : textProvider.getCellText(row, col.id);
-        drawCellText(canvas, text, left, top, right, bottom, col.textColor);
+        if ("shed_number".equals(col.id)) {
+            // 棚号列：字号固定不缩，放不下自动换行
+            drawWrappedCellText(canvas, text, left, top, right, bottom, col.textColor, style.textPaint);
+        } else {
+            drawCellText(canvas, text, left, top, right, bottom, col.textColor, style.textPaint);
+        }
+    }
+
+    // 棚号列专用：字号固定、不缩放；超宽换行，最多 2 行，再长加省略号
+    private void drawWrappedCellText(Canvas canvas, String text, int left, int top, int right, int bottom,
+                                     int color, Paint paint) {
+        if (TextUtils.isEmpty(text)) {
+            return;
+        }
+        paint.setColor(color);
+        float avail = (right - left) - 6f;
+        List<String> lines = wrapLines(text, paint, avail, 2);
+        Paint.FontMetrics fm = paint.getFontMetrics();
+        float lineH = fm.descent - fm.ascent;
+        float totalH = lineH * lines.size();
+        float cx = (left + right) / 2f;
+        float startY = (top + bottom) / 2f - totalH / 2f - fm.ascent;
+        canvas.save();
+        canvas.clipRect(left, top, right, bottom);
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            // textPaint 是居中对齐（Paint.Align.CENTER），直接画在中心线
+            canvas.drawText(line, cx, startY + i * lineH, paint);
+        }
+        canvas.restore();
+    }
+
+    private List<String> wrapLines(String text, Paint paint, float maxWidth, int maxLines) {
+        List<String> lines = new ArrayList<>();
+        int n = text.length();
+        int start = 0;
+        while (start < n && lines.size() < maxLines) {
+            int end = start;
+            int lastSep = -1;
+            while (end < n && paint.measureText(text.substring(start, end + 1)) <= maxWidth) {
+                char c = text.charAt(end);
+                if (c == ',' || c == '，' || c == '、' || c == ' ' || c == '-') {
+                    lastSep = end;
+                }
+                end++;
+            }
+            if (end >= n) {
+                lines.add(text.substring(start));
+                start = n;
+                break;
+            }
+            if (lines.size() == maxLines - 1) {
+                lines.add(ellipsize(text.substring(start), paint, maxWidth));
+                start = n;
+                break;
+            }
+            int cut = lastSep > start ? lastSep + 1 : Math.max(start + 1, end);
+            lines.add(text.substring(start, cut).trim());
+            start = cut;
+            while (start < n && text.charAt(start) == ' ') {
+                start++;
+            }
+        }
+        return lines;
+    }
+
+    private String ellipsize(String text, Paint paint, float maxWidth) {
+        String ellipsis = "…";
+        String s = text;
+        while (s.length() > 1 && paint.measureText(s + ellipsis) > maxWidth) {
+            s = s.substring(0, s.length() - 1);
+        }
+        return s + ellipsis;
     }
 
     private void drawHeader(Canvas canvas) {
@@ -955,7 +1032,7 @@ public class MixCalcTableView extends ViewGroup {
                 style.headerFill(state), style.headerStroke(state), style.headerStrokeWidth(state));
 
         String text = textProvider == null ? "" : textProvider.getHeaderText(col.id);
-        drawCellText(canvas, text, left, top, right, bottom, style.textBlack);
+        drawCellText(canvas, text, left, top, right, bottom, style.textBlack, style.headerTextPaint);
     }
 
     private void drawFooter(Canvas canvas) {
@@ -994,7 +1071,8 @@ public class MixCalcTableView extends ViewGroup {
                 style.footerFill(footerStyle), style.cellStroke, style.borderWidth);
 
         String text = textProvider == null ? "" : textProvider.getFooterText(col.id);
-        drawCellText(canvas, text, left, top, right, bottom, style.footerTextColor(footerStyle));
+        drawCellText(canvas, text, left, top, right, bottom,
+                style.footerTextColor(footerStyle), style.textPaint);
     }
 
     private void drawFrozenDivider(Canvas canvas) {
@@ -1024,11 +1102,10 @@ public class MixCalcTableView extends ViewGroup {
     }
 
     private void drawCellText(Canvas canvas, String text, int left, int top, int right, int bottom,
-                              int color) {
+                              int color, Paint paint) {
         if (TextUtils.isEmpty(text)) {
             return;
         }
-        Paint paint = style.textPaint;
         paint.setColor(color);
 
         // 文字比格子宽就缩小字号塞进去，防止超出单元格（英文表头词普遍比中文长）。

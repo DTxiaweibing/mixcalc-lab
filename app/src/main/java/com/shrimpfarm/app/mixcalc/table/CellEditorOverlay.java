@@ -55,7 +55,7 @@ class CellEditorOverlay {
         editText.setVisibility(View.GONE);
         editText.setBackgroundResource(R.drawable.cell_border);
         editText.setGravity(Gravity.CENTER);
-        editText.setTextSize(12);
+        editText.setTextSize(16);
         editText.setTypeface(editText.getTypeface(), Typeface.BOLD);
         editText.setPadding(0, 0, 0, 0);
         editText.setSingleLine(true);

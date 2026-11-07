@@ -107,79 +107,14 @@ public class FeedData {
     }
 
     public void calculateShedCount() {
-        if (isShedCountManuallyModified) {
-            return;
-        }
         if (shedNumber == null || shedNumber.trim().isEmpty()) {
             this.shedCount = 0;
             this.defaultShedCount = 0;
             return;
         }
-        String cleanNumber = shedNumber.trim();
-        this.shedCount = 0;
-        this.defaultShedCount = 0;
-        cleanNumber = cleanNumber.replace("，", ",")
-            .replace("、", ",")
-            .replace(" ", ",")
-            .replace(",,", ",")
-            .replace(",,", ",");
-        String[] parts = cleanNumber.split(",");
-        int totalCount = 0;
-        for (int i = 0; i < parts.length; i++) {
-            String part = parts[i].trim();
-            if (part.isEmpty()) {
-                continue;
-            }
-            int partCount = parsePartCount(part);
-            totalCount += partCount;
-        }
-        this.shedCount = Math.max(0, totalCount);
+        // 行内重复棚号只算一次；跨行重叠由 Activity 的打点覆盖处理
+        this.shedCount = ShedCoverage.parseShedNumbers(shedNumber).size();
         this.defaultShedCount = this.shedCount;
-    }
-
-    private int parsePartCount(String part) {
-        if (part == null || part.trim().isEmpty()) {
-            return 0;
-        }
-        if (part.contains("-") || part.contains("到") || part.contains("至") || part.contains("~") || part.contains("—")) {
-            String rangePart = part.replace("到", "-")
-                .replace("至", "-")
-                .replace("~", "-")
-                .replace("—", "-")
-                .replace("号到", "-")
-                .replace("号至", "-");
-            String[] rangeParts = rangePart.split("-", 2);
-            if (rangeParts.length == 2) {
-                try {
-                    String startStr = rangeParts[0].replaceAll("[^0-9]", "");
-                    String endStr = rangeParts[1].replaceAll("[^0-9]", "");
-                    if (!startStr.isEmpty() && !endStr.isEmpty()) {
-                        int start = Integer.parseInt(startStr);
-                        int end = Integer.parseInt(endStr);
-                        if (start > 0 && end > 0) {
-                            int result = (start <= end) ? (end - start + 1) : (start - end + 1);
-                            return result;
-                        }
-                    }
-                } catch (NumberFormatException e) { /* ignored */ }
-            }
-        }
-        if (isValidNumber(part)) {
-            return 1;
-        }
-        return 0;
-    }
-
-    private boolean isValidNumber(String str) {
-        if (str == null || str.trim().isEmpty()) {
-            return false;
-        }
-        try {
-            String numStr = str.replaceAll("[^0-9]", "");
-            return !numStr.isEmpty();
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     public void calculateAverage(boolean fermentedIncludedInAverage) {
@@ -215,9 +150,7 @@ public class FeedData {
         if (countNonFermentedFeeds() != 2) {
             switchRatio = 0;
         }
-        if (!isShedCountManuallyModified) {
-            calculateShedCount();
-        }
+        calculateShedCount();
         recalculateDerivedOnly(waterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
     }
 
@@ -440,9 +373,7 @@ public class FeedData {
 
     public void setShedNumber(String shedNumber) {
         this.shedNumber = shedNumber != null ? shedNumber : "";
-        if (!isShedCountManuallyModified) {
-            calculateShedCount();
-        }
+        calculateShedCount();
     }
 
     public int getShedCount() {

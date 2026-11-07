@@ -9,6 +9,8 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.util.TypedValue;
 import android.graphics.Paint;
 import android.net.Uri;
@@ -16,6 +18,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
 import android.text.Spanned;
+import android.text.TextUtils;
 import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
@@ -43,6 +46,7 @@ import com.shrimpfarm.app.BaseActivity;
 import com.shrimpfarm.app.BuildConfig;
 import com.shrimpfarm.app.R;
 import com.shrimpfarm.app.mixcalc.model.FeedData;
+import com.shrimpfarm.app.mixcalc.model.ShedCoverage;
 import com.shrimpfarm.app.mixcalc.prefs.MixCalcPrefs;
 import com.shrimpfarm.app.mixcalc.model.Batch;
 import com.shrimpfarm.app.mixcalc.table.TabletLayout;
@@ -53,6 +57,7 @@ import com.shrimpfarm.app.mixcalc.table.OnCellEditListener;
 import com.shrimpfarm.app.mixcalc.table.OnCellTapListener;
 import com.shrimpfarm.app.mixcalc.table.TableColumn;
 import com.shrimpfarm.app.mixcalc.table.TableColumnConfig;
+import com.shrimpfarm.app.mixcalc.ui.FlowLayout;
 import com.shrimpfarm.app.mixcalc.ui.PopupGeometry;
 
 import org.json.JSONArray;
@@ -88,11 +93,11 @@ public class MixCalcActivity extends BaseActivity {
     private int editBeginRow = -1;
     private String editBeginColumn;
     private double editBeginValue;
-    // 棚数格的进入编辑快照：净结果没变时要还原，不能留下“手动修改”标记
-    private int editBeginShedCount;
-    private int editBeginShedBase;
-    private int editBeginShedBaseSum;
-    private boolean editBeginShedManual;
+
+    // 棚数按钮点开的棚号气泡
+    private PopupWindow shedListPopup;
+    // 超上限提示别每敲一个字弹一次
+    private long lastOverLimitToastAt = 0;
 
     // 列管理
     private final Map<String, Boolean> columnVisibility = new HashMap<String, Boolean>();
@@ -183,13 +188,6 @@ public class MixCalcActivity extends BaseActivity {
             if (data == null) {
                 return CellStyle.STATE_NORMAL;
             }
-            if ("shed_count".equals(columnId)) {
-                // 第 1 行：基数被后面各行扣光（≤0）时标警告色
-                if (row == FIRST_ROW && data.getShedCountBase() > 0
-                        && data.getShedCount() <= 0) {
-                    return CellStyle.STATE_WARNING;
-                }
-            }
             if (isEditableColumn(columnId)
                     && !"average_feed".equals(columnId)
                     && !isCellEnabled(columnId, data, row)) {
@@ -255,6 +253,11 @@ public class MixCalcActivity extends BaseActivity {
     private final OnCellTapListener tapListener = new OnCellTapListener() {
         @Override
         public void onCellClick(int row, String columnId) {
+            // 棚数是按钮：点开看本行棚号气泡，不进编辑
+            if ("shed_count".equals(columnId)) {
+                showShedListPopup(row);
+                return;
+            }
             // 编辑由引擎的 beginEdit 处理；这里只负责把被拦的原因告诉用户
             FeedData data = getData(row);
             if (data == null || !isEditableColumn(columnId)) {
@@ -318,10 +321,6 @@ public class MixCalcActivity extends BaseActivity {
             editBeginRow = row;
             editBeginColumn = columnId;
             editBeginValue = data == null ? 0 : getFeedValueByColumn(data, columnId);
-            editBeginShedCount = data == null ? 0 : data.getShedCount();
-            editBeginShedBase = data == null ? 0 : data.getShedCountBase();
-            editBeginShedBaseSum = data == null ? 0 : data.getShedCountBaseSum();
-            editBeginShedManual = data != null && data.isShedCountManuallyModified();
             // 第一次点第一行棚号：告诉用户格式，并给一个"查看帮助"入口
             if (row == 0 && "shed_number".equals(columnId) && !MixCalcPrefs.isShedInputHintShown(MixCalcActivity.this)) {
                 MixCalcPrefs.setShedInputHintShown(MixCalcActivity.this);
@@ -470,6 +469,7 @@ public class MixCalcActivity extends BaseActivity {
         bindCurrentBatch();
         recalcBatch(batches.get(currentBatchIndex));
         recomputeFirstRowRemainder();
+        updateFooterRow();
     }
 
     // 获取列索引
@@ -499,35 +499,23 @@ public class MixCalcActivity extends BaseActivity {
         String value = text == null ? "" : text.trim();
 
         switch (columnId) {
-            case "shed_number":
+            case "shed_number": {
+                // 改棚号本质是改棚数：平均保持不变，料量按新棚数重算
+                int oldCount = data.getShedCount();
+                double oldAverage = data.getAverage(fermentedIncludedInAverage);
                 data.setShedNumber(value);
-                break;
-            case "shed_count": {
-                double newValue = 0;
-                if (!value.isEmpty()) {
-                    try {
-                        newValue = Double.parseDouble(value);
-                    } catch (NumberFormatException e) {
-                        newValue = 0;
-                    }
+                if (data.getShedCount() != oldCount && oldAverage > 0) {
+                    data.setAverageManually(oldAverage, fermentedIncludedInAverage);
                 }
-                int newCount = (int) newValue;
-                boolean sameCell = row == editBeginRow && columnId.equals(editBeginColumn);
-                int originCount = sameCell ? editBeginShedCount : data.getShedCount();
-                if (newCount != originCount) {
-                    data.setShedCount(newCount);
-                    data.setShedCountManuallyModified(!(newCount == 0 || value.isEmpty()));
-                    if (row == FIRST_ROW) {
-                        // 第 1 行手改：改后的显示值就是新锚点，同时记下刻后面各行之和，
-                        // 之后只按“后面各行的增量”扣，不再重复扣
-                        data.setShedCountBase(newCount);
-                        data.setShedCountBaseSum(sumShedCountsBelowFirstRow());
+                int over = ShedCoverage.findOverLimit(value);
+                if (over > 0) {
+                    long now = System.currentTimeMillis();
+                    if (now - lastOverLimitToastAt > 1500) {
+                        lastOverLimitToastAt = now;
+                        Toast.makeText(this,
+                                getString(R.string.mix_shed_over_limit, ShedCoverage.MAX_SHED_NUMBER),
+                                Toast.LENGTH_SHORT).show();
                     }
-                } else if (sameCell) {
-                    // 净结果没变（只是获得焦点 / 输入后又改回原值）：还原快照，不算手动修改
-                    data.setShedCountManuallyModified(editBeginShedManual);
-                    data.setShedCountBase(editBeginShedBase);
-                    data.setShedCountBaseSum(editBeginShedBaseSum);
                 }
                 break;
             }
@@ -591,8 +579,10 @@ public class MixCalcActivity extends BaseActivity {
             return;
         }
 
-        // 第 1 行的棚数是“基数 − 后面各行之和”，允许 ≤ 0，故豁免“无棚数即清空料格”
-        if (row != FIRST_ROW && data.getShedCount() <= 0) {
+        // 所有行平等：没有棚数就清空料格
+        // 棚号超上限时整段没计入，也别顺手把这一行已有的料清掉
+        if (data.getShedCount() <= 0
+                && ShedCoverage.findOverLimit(data.getShedNumber()) == 0) {
             data.setFermentedFeed(0);
             data.setPowderFeed(0);
             data.setFeed03(0);
@@ -605,14 +595,9 @@ public class MixCalcActivity extends BaseActivity {
             data.setSwitchRatio(0);
         }
 
-        if (row == FIRST_ROW) {
-            // 第 1 行：棚数 = 基数 − 后面各行之和，派生值也要用“剩余棚数”算，
-            // 所以不走 updateAllCalculations()（它会先把棚数还原成基数，把平均算反）
-            recomputeFirstRowRemainder();
-        } else {
-            data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-            recomputeFirstRowRemainder();
-        }
+        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+        // 所有行一视同仁：再按打点覆盖修正棚数
+        recomputeFirstRowRemainder();
         if (table != null) {
             table.notifyAllChanged();
         }
@@ -620,80 +605,38 @@ public class MixCalcActivity extends BaseActivity {
         saveAllData();
     }
 
-    // 第 1 行棚数 = 基数 − 第 2..N 行棚数之和，允许 0 或负数。
-    // 基数来自第 1 行棚号自动推出来的棚数；棚数格被手改过的话，基数就是改后的值。
-    // 得在各行 updateAllCalculations() 之后再调，不然基数会被棚号重算盖掉。
+    // 所有行一视同仁：只做打点覆盖（后行优先），没有“第 1 行 = 总棚数”这回事
     private void recomputeFirstRowRemainder() {
-        if (dataList == null || dataList.size() <= FIRST_ROW + 1) {
-            return;
-        }
-        FeedData first = getData(FIRST_ROW);
-        if (first == null) {
-            return;
-        }
-
-        // 记下进门前第 1 行的剩余棚数和它对应的每棚平均。平均是锚点，棚数变了它不变
-        int oldShedCount = first.getShedCount();
-        double oldAverage = first.getAverage(fermentedIncludedInAverage);
-
-        // 未被手改：由棚号重新推出基数（先写进 shedCount）；手改过则基数是手改后的锚点值
-        if (!first.isShedCountManuallyModified()) {
-            first.calculateShedCount();
-            first.setShedCountBase(first.getShedCount());
-            // 自动推导：基数要减掉后面各行全部（锚点为 0）
-            first.setShedCountBaseSum(0);
-        } else if (first.getShedCountBase() <= 0) {
-            // 覆盖安装升级上来的旧数据没有 shedCountBase：
-            // 旧棚数 > 0 就当基数迁移；旧棚数为 0（无意义）则放开手改标记，交回棚号推导
-            if (first.getShedCount() > 0) {
-                first.setShedCountBase(first.getShedCount());
-                first.setShedCountBaseSum(0);
-            } else {
-                first.setShedCountManuallyModified(false);
-                first.calculateShedCount();
-                first.setShedCountBase(first.getShedCount());
-                first.setShedCountBaseSum(0);
-            }
-        }
-
-        int sum = 0;
-        for (int i = FIRST_ROW + 1; i < dataList.size(); i++) {
-            FeedData d = dataList.get(i);
-            if (d != null) {
-                sum += d.getShedCount();
-            }
-        }
-
-        // 手改过：基数是“手改那一刻的显示值”，只扣后面各行相对那一刻的增量，
-        // 不重复扣（手改 32→28、第 2 行 3 个时，显示就该是 28 而不是 25）
-        int remainder = first.getShedCountBase() - (sum - first.getShedCountBaseSum());
-        first.setShedCountDirectly(remainder, first.isShedCountManuallyModified());
-
-        // 棚数变了：钉住“每棚平均”，让料量(含称料) / 水量按新棚数重算；
-        // 反过来（料量不变、平均被除出来）是错的
-        if (remainder != oldShedCount && oldAverage > 0
-                && !first.isAverageManuallyModified()) {
-            first.setAverage(oldAverage);
-            first.setAverageManuallyModified(true);
-        }
-
-        first.recalculateDerivedOnly(globalWaterPercentage,
-                fermentedIncludedInWater, fermentedIncludedInAverage);
+        applyShedCoverage();
     }
 
-    // 第 2..N 行棚数之和，手改第 1 行时用来记锚点
-    private int sumShedCountsBelowFirstRow() {
-        if (dataList == null) {
-            return 0;
+    // 打点覆盖：按行序铺开棚号，后行优先；棚数变化的那几行顺带重算派生值
+    private void applyShedCoverage() {
+        if (dataList == null || dataList.size() < 1) {
+            return;
         }
-        int sum = 0;
-        for (int i = FIRST_ROW + 1; i < dataList.size(); i++) {
+        List<String> texts = new ArrayList<>();
+        for (FeedData d : dataList) {
+            texts.add(d == null ? "" : d.getShedNumber());
+        }
+        List<List<Integer>> sets = ShedCoverage.ownedSets(texts);
+        for (int i = 0; i < dataList.size(); i++) {
             FeedData d = dataList.get(i);
-            if (d != null) {
-                sum += d.getShedCount();
+            if (d == null) {
+                continue;
+            }
+            int count = sets.get(i).size();
+            if (d.getShedCount() != count) {
+                // 棚数变了：平均不动，料量按“平均 × 新棚数”重算
+                double oldAverage = d.getAverage(fermentedIncludedInAverage);
+                d.setShedCountDirectly(count, false);
+                if (oldAverage > 0) {
+                    d.setAverageManually(oldAverage, fermentedIncludedInAverage);
+                }
+                d.recalculateDerivedOnly(globalWaterPercentage,
+                        fermentedIncludedInWater, fermentedIncludedInAverage);
             }
         }
-        return sum;
     }
 
     private double parseDouble(String text) {
@@ -822,6 +765,182 @@ public class MixCalcActivity extends BaseActivity {
         if (columnSettingsPopup != null) {
             columnSettingsPopup.dismiss();
         }
+        if (shedListPopup != null) {
+            shedListPopup.dismiss();
+        }
+    }
+
+    // 棚数按钮 → 本行棚号气泡：上边贴格子下沿，左边缘对齐棚数格
+    private void showShedListPopup(int row) {
+        try {
+            FeedData data = getData(row);
+            if (data == null || data.getShedCount() <= 0) {
+                return;
+            }
+            List<Integer> numbers = shedNumbersOf(row);
+            if (numbers.isEmpty()) {
+                return;
+            }
+            if (shedListPopup != null) {
+                shedListPopup.dismiss();
+            }
+
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            int screenW = dm.widthPixels;
+            int screenH = dm.heightPixels;
+            // 字号上限：系统字体放大最多按 1.0 倍算，免得弹窗字被系统放大得过大
+            float cappedScale = Math.min(dm.scaledDensity, dm.density);
+
+            // 标题 / 数量先建出来，算好“至少要放多宽”，免得标题折行
+            TextView title = new TextView(this);
+            title.setText(getString(R.string.mix_shed_list_title, row + 1));
+            title.setTextSize(TypedValue.COMPLEX_UNIT_PX, 16f * cappedScale);
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            title.setTextColor(Color.BLACK);
+            title.setSingleLine(true);
+            title.setEllipsize(TextUtils.TruncateAt.END);
+
+            TextView count = new TextView(this);
+            count.setText(getString(R.string.mix_shed_list_count, numbers.size()));
+            count.setTextSize(TypedValue.COMPLEX_UNIT_PX, 11f * cappedScale);
+            count.setTextColor(0xFF666666);
+            count.setSingleLine(true);
+
+            int headerNeedW = (int) (title.getPaint().measureText(title.getText().toString())
+                    + count.getPaint().measureText(count.getText().toString())) + dpToPx(30);
+
+            // 量出号码块的真实尺寸：最小 28dp 圆点，数字变宽自动撑成胶囊
+            Paint chipPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            chipPaint.setTextSize(12f * cappedScale);
+            chipPaint.setTypeface(Typeface.DEFAULT_BOLD);
+            float maxTextW = 0;
+            for (int n : numbers) {
+                maxTextW = Math.max(maxTextW, chipPaint.measureText(String.valueOf(n)));
+            }
+            int chipW = (int) Math.max(dpToPx(28), maxTextW + dpToPx(12));
+            int pitch = chipW + dpToPx(2);
+            int padH = dpToPx(6) * 2;
+
+            // 宽度 = max(标题所需, 能排下的整块号码宽度)，上限 80% 屏宽
+            int maxAllowed = Math.min((int) (screenW * 0.8), screenW - dpToPx(8));
+            int perRow = Math.max(1, (maxAllowed - padH) / pitch);
+            int w = Math.max(headerNeedW, padH + perRow * pitch);
+            if (w > maxAllowed) {
+                w = maxAllowed;
+            }
+            perRow = Math.max(1, (w - padH) / pitch);
+
+            // 左边缘对齐棚数格；右边放不下就往左挪，不压缩宽度（压缩会把标题挤折行）
+            int[] loc = new int[2];
+            table.getLocationOnScreen(loc);
+            Rect cellRect = table.getCellRect(row, "shed_count");
+            int x = loc[0] + cellRect.left;
+            int y = loc[1] + cellRect.bottom + dpToPx(2);
+            x = Math.min(x, screenW - w - dpToPx(4));
+            x = Math.max(dpToPx(6), x);
+
+            int rows = (numbers.size() + perRow - 1) / perRow;
+            int scrollH = rows * (dpToPx(28) + dpToPx(2)) + dpToPx(18);
+            int headH = dpToPx(41);
+            // 弹窗最高只长到表尾行上沿：超过就内部滚动，不再盖住表尾
+            int footerTopOnScreen = loc[1] + table.getHeight() - table.getFooterHeightPx();
+            int avail = footerTopOnScreen - dpToPx(4) - y;
+            if (avail < headH + scrollH) {
+                if (avail >= headH + dpToPx(120)) {
+                    // 下面地方不够就缩短气泡、内部滚动
+                    scrollH = avail - headH;
+                } else {
+                    // 实在放不下：翻到格子上方
+                    y = loc[1] + cellRect.top - headH - scrollH - dpToPx(2);
+                    if (y < dpToPx(8)) {
+                        y = dpToPx(8);
+                    }
+                }
+            }
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            GradientDrawable cardBg = new GradientDrawable();
+            cardBg.setColor(Color.WHITE);
+            cardBg.setCornerRadius(dpToPx(12));
+            card.setBackground(cardBg);
+
+            LinearLayout header = new LinearLayout(this);
+            header.setOrientation(LinearLayout.HORIZONTAL);
+            header.setGravity(Gravity.CENTER_VERTICAL);
+            header.setPadding(dpToPx(10), 0, dpToPx(10), 0);
+
+            header.addView(title, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            header.addView(count);
+
+            card.addView(header, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(40)));
+
+            View divider = new View(this);
+            divider.setBackgroundColor(0xFFE0E0E0);
+            card.addView(divider, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
+            FlowLayout flow = new FlowLayout(this);
+            flow.setPadding(dpToPx(6), dpToPx(10), dpToPx(6), dpToPx(8));
+            for (int n : numbers) {
+                flow.addView(buildShedChip(n));
+            }
+
+            ScrollView scroll = new ScrollView(this);
+            scroll.setVerticalScrollBarEnabled(true);
+            scroll.addView(flow);
+            card.addView(scroll, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, scrollH));
+
+            PopupWindow popup = new PopupWindow(card, w, ViewGroup.LayoutParams.WRAP_CONTENT);
+            popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            popup.setOutsideTouchable(true);
+            popup.setFocusable(true);
+            popup.setElevation(dpToPx(8));
+            popup.setOnDismissListener(() -> shedListPopup = null);
+            shedListPopup = popup;
+            popup.showAtLocation(table, Gravity.NO_GRAVITY, x, y);
+        } catch (Exception e) {
+            Log.e(TAG, "showShedListPopup: " + e.getMessage(), e);
+        }
+    }
+
+    private TextView buildShedChip(int number) {
+        TextView chip = new TextView(this);
+        chip.setText(String.valueOf(number));
+        // 与弹窗其它文字一致：字号上限按 1.0 倍系统字体算
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        float cappedScale = Math.min(dm.scaledDensity, dm.density);
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_PX, 12f * cappedScale);
+        chip.setTypeface(Typeface.DEFAULT_BOLD);
+        chip.setTextColor(Color.BLACK);
+        chip.setGravity(Gravity.CENTER);
+        chip.setIncludeFontPadding(false);
+        chip.setMinWidth(dpToPx(28));
+        chip.setPadding(dpToPx(6), 0, dpToPx(6), 0);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFFA8DDB5);
+        bg.setCornerRadius(dpToPx(14));
+        chip.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dpToPx(28));
+        lp.setMargins(0, 0, dpToPx(2), dpToPx(2));
+        chip.setLayoutParams(lp);
+        return chip;
+    }
+
+    private List<Integer> shedNumbersOf(int row) {
+        List<String> texts = new ArrayList<>();
+        for (FeedData d : dataList) {
+            texts.add(d == null ? "" : d.getShedNumber());
+        }
+        List<List<Integer>> sets = ShedCoverage.ownedSets(texts);
+        if (row < 0 || row >= sets.size()) {
+            return new ArrayList<>();
+        }
+        return sets.get(row);
     }
 
     // 更新统计行
@@ -842,12 +961,15 @@ public class MixCalcActivity extends BaseActivity {
 
             for (FeedData data : dataList) {
                 totalShedCount += data.getShedCount();
-                totalFermented += data.getFermentedFeed();
-                totalPowder += data.getPowderFeed();
-                totalFeed03 += data.getFeed03();
-                totalFeed05 += data.getFeed05();
-                totalFeed10 += data.getFeed10();
-                totalWater += data.getWater();
+                // 棚数被后面的行覆盖成 0 的行不参与料/水合计，避免重叠棚的料算两遍
+                if (data.getShedCount() > 0) {
+                    totalFermented += data.getFermentedFeed();
+                    totalPowder += data.getPowderFeed();
+                    totalFeed03 += data.getFeed03();
+                    totalFeed05 += data.getFeed05();
+                    totalFeed10 += data.getFeed10();
+                    totalWater += data.getWater();
+                }
 
                 double rowAverage = data.getAverage(fermentedIncludedInAverage);
                 double rowShedCount = data.getShedCount();
@@ -885,6 +1007,10 @@ public class MixCalcActivity extends BaseActivity {
             boolean hasData = false;
 
             for (FeedData data : dataList) {
+                // 棚号为 0 的行（棚号被后面的行全部覆盖）不参与误差合计
+                if (data.getShedCount() <= 0) {
+                    continue;
+                }
                 double fermented = data.getFermentedFeed();
                 double powder = data.getPowderFeed();
                 double feed03 = data.getFeed03();
@@ -1068,6 +1194,9 @@ public class MixCalcActivity extends BaseActivity {
 
         if ("seq".equals(id)) {
             color = 0xFF666666;
+        } else if ("shed_count".equals(id)) {
+            // 棚数是可点的按钮，用深绿提示可点
+            color = 0xFF1F6B30;
         } else if ("average_feed".equals(id) || "water".equals(id) || "weighed_feed".equals(id)) {
             color = 0xFF0000FF;
         }
@@ -1205,15 +1334,13 @@ public class MixCalcActivity extends BaseActivity {
         batch.getColumnFixed().putAll(columnFixed);
     }
 
-    /** 按批次自己的设置重算除首行外的所有行。 */
+    /** 按批次自己的设置重算所有行（所有行平等，没有首行特例）。 */
     private void recalcBatch(Batch batch) {
         for (int i = 0; i < batch.getRows().size(); i++) {
-            if (i != FIRST_ROW) {
-                batch.getRows().get(i).updateAllCalculations(
-                        batch.getWaterPercentage(),
-                        batch.isFermentedInWater(),
-                        batch.isFermentedInAverage());
-            }
+            batch.getRows().get(i).updateAllCalculations(
+                    batch.getWaterPercentage(),
+                    batch.isFermentedInWater(),
+                    batch.isFermentedInAverage());
         }
     }
 
@@ -1230,6 +1357,7 @@ public class MixCalcActivity extends BaseActivity {
         bindCurrentBatch();
         recalcBatch(batches.get(currentBatchIndex));
         recomputeFirstRowRemainder();
+        updateFooterRow();
         rebuildCompleteTable();
         if (table != null) {
             table.resetScroll();
@@ -1773,14 +1901,9 @@ public class MixCalcActivity extends BaseActivity {
             data.setAverage(avg);
             data.setAverageManuallyModified(true);
         }
-        if (row == FIRST_ROW) {
-            // 第 1 行由 recomputeFirstRowRemainder() 统一处理（棚数 / 平均 / 料量）
-            recomputeFirstRowRemainder();
-        } else {
-            data.recalculateDerivedOnly(globalWaterPercentage,
-                    fermentedIncludedInWater, fermentedIncludedInAverage);
-            recomputeFirstRowRemainder();
-        }
+        data.recalculateDerivedOnly(globalWaterPercentage,
+                fermentedIncludedInWater, fermentedIncludedInAverage);
+        recomputeFirstRowRemainder();
         if (table != null) {
             table.notifyAllChanged();
         }
@@ -1791,9 +1914,9 @@ public class MixCalcActivity extends BaseActivity {
     // 更新所有计算
     private void updateAllCalculations() {
         try {
-            for (int i = FIRST_ROW + 1; i < dataList.size(); i++) {
+            for (int i = 0; i < dataList.size(); i++) {
                 FeedData data = dataList.get(i);
-                // 重新计算所有行，传入两个标志
+                // 所有行一视同仁
                 data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
             }
             // 第 1 行由 recomputeFirstRowRemainder() 统一处理（棚数 / 每棚平均 / 料量一起算）
@@ -1876,8 +1999,7 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     private boolean isEditableColumn(String columnId) {
-        return "shed_number".equals(columnId) || 
-            "shed_count".equals(columnId) ||
+        return "shed_number".equals(columnId) ||
             "average_feed".equals(columnId) ||
             "fermented".equals(columnId) ||
             "powder".equals(columnId) ||
@@ -2229,14 +2351,15 @@ public class MixCalcActivity extends BaseActivity {
             TextView versionTv = popupView.findViewById(R.id.menu_item_version);
             versionTv.setText(getString(R.string.mix_menu_version_format, BuildConfig.VERSION_NAME));
 
-            // 宽度：正常字体下手机 1/3、平板 1/4；字体放大时按 fontScale 加宽（最多屏幕 60%），
+            // 宽度：正常字体下手机 1/3、平板/11 列全显 1/4；字体放大时按 fontScale 加宽（最多屏幕 60%），
             // 避免版本号在窄菜单里被挤成每行一个字。高度由 wrap_content 撑开。
             View mainLayout = findViewById(R.id.main_layout);
             int totalWidth = mainLayout != null && mainLayout.getWidth() > 0
                     ? mainLayout.getWidth()
                     : getResources().getDisplayMetrics().widthPixels;
             float fontScale = Math.max(1f, getResources().getConfiguration().fontScale);
-            int baseWidth = isTabletMode ? totalWidth / 4 : totalWidth / 3;
+            boolean wideMenu = isTabletMode || isElevenColumnsFilled();
+            int baseWidth = wideMenu ? totalWidth / 4 : totalWidth / 3;
             int maxWidth = (int) (totalWidth * 0.6f);
             int popupWidth = Math.min(maxWidth, Math.max(baseWidth, (int) (baseWidth * fontScale)));
             popup.setWidth(popupWidth);

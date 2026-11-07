@@ -32,6 +32,8 @@ public class CellStyle {
 
     public final float borderWidth;
     public final float boldBorderWidth;
+    // 表头专用字号（比正文小 2sp）
+    public final float headerTextSize;
 
     public final int headerBg = 0xFFE8F5E9;
     public final int footerBg = 0xFFF0F0F0;
@@ -70,7 +72,10 @@ public class CellStyle {
         this.footerHeight = footerHeightPx;
 
         float density = context.getResources().getDisplayMetrics().density;
-        float textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 12,
+        float textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 16,
+                context.getResources().getDisplayMetrics());
+        // 表头比正文小 2sp（用户反馈表头字号偏大）
+        headerTextSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14,
                 context.getResources().getDisplayMetrics());
 
         borderWidth = Math.max(1f, 0.5f * density);
@@ -89,6 +94,7 @@ public class CellStyle {
         textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
 
         headerTextPaint.set(textPaint);
+        headerTextPaint.setTextSize(headerTextSize);
     }
 
     public int bodyFill(int state) {

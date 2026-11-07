@@ -20,8 +20,8 @@ android {
         namespace "com.shrimpfarm.app"
         minSdkVersion 28
         targetSdkVersion 36
-        versionCode 8
-        versionName "0.3.5"
+        versionCode 9
+        versionName "0.3.6"
         multiDexEnabled true
     }
     compileOptions {
@@ -38,6 +38,10 @@ android {
                 storePassword keystoreProps['storePassword']
                 keyAlias keystoreProps['keyAlias']
                 keyPassword keystoreProps['keyPassword']
+                // 三种签名方案全开：老设备认 V1(JAR)，Android 7+ 认 V2，Android 9+ 认 V3
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
             }
         }
     }
