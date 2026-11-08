@@ -150,7 +150,10 @@ public class FeedData {
         if (countNonFermentedFeeds() != 2) {
             switchRatio = 0;
         }
-        calculateShedCount();
+        // 不要在这里重算棚数：shedNumber 解析出来的是“本行自己数的个数”，
+        // 跨行重叠时生效的是 Activity 打点覆盖后的棚数。若这里先改掉 shedCount，
+        // 覆盖逻辑会误判“棚数变了”，把用户刚输入的料量按错误棚数重算一遍。
+        // shedNumber 变更统一走 setShedNumber()。
         recalculateDerivedOnly(waterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
     }
 

@@ -106,6 +106,8 @@ class CellEditorOverlay {
         }
         if (editing && (this.row != row || this.column == null || !this.column.id.equals(column.id))) {
             commitInternal();
+            // 换格 = 上一格失焦：先让宿主结算，再开新格
+            notifyEditEnd();
         }
 
         this.row = row;
@@ -157,6 +159,8 @@ class CellEditorOverlay {
         commitInternal();
         editText.setVisibility(View.GONE);
         table.hideNextRowButton();
+        // 收起浮层 = 失去焦点：宿主在这里结算棚数为 0 的行
+        notifyEditEnd();
     }
 
     // 表格滚过之后跟着挪，滚出可见区就结束
@@ -226,6 +230,13 @@ class CellEditorOverlay {
         }
         dirty = false;
         listener.onCellCommitted(row, column.id, editText.getText().toString());
+    }
+
+    private void notifyEditEnd() {
+        OnCellEditListener listener = table.editListener();
+        if (listener != null && column != null && row >= 0) {
+            listener.onCellEditEnd(row, column.id);
+        }
     }
 
     private void showIme() {

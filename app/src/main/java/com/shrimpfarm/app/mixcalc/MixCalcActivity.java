@@ -46,6 +46,7 @@ import com.shrimpfarm.app.BaseActivity;
 import com.shrimpfarm.app.BuildConfig;
 import com.shrimpfarm.app.R;
 import com.shrimpfarm.app.mixcalc.model.FeedData;
+import com.shrimpfarm.app.mixcalc.model.RowSettlement;
 import com.shrimpfarm.app.mixcalc.model.ShedCoverage;
 import com.shrimpfarm.app.mixcalc.prefs.MixCalcPrefs;
 import com.shrimpfarm.app.mixcalc.model.Batch;
@@ -342,6 +343,11 @@ public class MixCalcActivity extends BaseActivity {
         public void onEditNextRow(int row, String columnId) {
             moveFocusToNextRow(row, columnId);
         }
+
+        @Override
+        public void onCellEditEnd(int row, String columnId) {
+            settleZeroRows();
+        }
     };
 
     @Override
@@ -469,6 +475,8 @@ public class MixCalcActivity extends BaseActivity {
         bindCurrentBatch();
         recalcBatch(batches.get(currentBatchIndex));
         recomputeFirstRowRemainder();
+        // 载入后清一次历史脏数据：棚数为 0 却还留着料的，按新行处理
+        settleZeroRows();
         updateFooterRow();
     }
 
@@ -572,32 +580,30 @@ public class MixCalcActivity extends BaseActivity {
         applyRowChange(row);
     }
 
-    // 行数据改动的统一出口：没棚数就清空料格（就是旧的"禁用即清空"），重算并整表重绘
+    // 行数据改动的统一出口：编辑途中只隐藏显示，不动数据（等失焦结算），重算并整表重绘
     private void applyRowChange(int row) {
         FeedData data = getData(row);
         if (data == null) {
             return;
         }
 
-        // 所有行平等：没有棚数就清空料格
-        // 棚号超上限时整段没计入，也别顺手把这一行已有的料清掉
-        if (data.getShedCount() <= 0
-                && ShedCoverage.findOverLimit(data.getShedNumber()) == 0) {
-            data.setFermentedFeed(0);
-            data.setPowderFeed(0);
-            data.setFeed03(0);
-            data.setFeed05(0);
-            data.setFeed10(0);
-            data.setWater(0);
-            data.setWeighedFeed(0);
-            data.setAverage(0);
-            data.setAverageManuallyModified(false);
-            data.setSwitchRatio(0);
-        }
-
-        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
-        // 所有行一视同仁：再按打点覆盖修正棚数
+        // 先按打点覆盖算出权威棚数（棚数真的变了才按旧平均重算料量），再刷新派生值：
+        // 顺序反了会拿“本行棚号自己数的个数”当权威值，和别的行重叠时
+        // 每敲一个键都会把料量按错误棚数改一遍（手动填料被改写）
         recomputeFirstRowRemainder();
+        data.updateAllCalculations(globalWaterPercentage, fermentedIncludedInWater, fermentedIncludedInAverage);
+        if (table != null) {
+            table.notifyAllChanged();
+        }
+        updateFooterRow();
+        saveAllData();
+    }
+
+    // 失焦结算：棚数仍为 0 的行当新行处理（棚号保留，只清料/水/平均/称料）
+    private void settleZeroRows() {
+        if (dataList == null || !RowSettlement.settleZeroRows(dataList)) {
+            return;
+        }
         if (table != null) {
             table.notifyAllChanged();
         }
@@ -627,8 +633,10 @@ public class MixCalcActivity extends BaseActivity {
             }
             int count = sets.get(i).size();
             if (d.getShedCount() != count) {
-                // 棚数变了：平均不动，料量按“平均 × 新棚数”重算
-                double oldAverage = d.getAverage(fermentedIncludedInAverage);
+                // 棚数变了：平均不动，料量按“平均 × 新棚数”重算。
+                // 用存储的平均值，不要用 getAverage(...) 现算——它会被本行
+                // 棚号自己数的个数影响，重叠时算出的平均是错的。
+                double oldAverage = d.getAverage();
                 d.setShedCountDirectly(count, false);
                 if (oldAverage > 0) {
                     d.setAverageManually(oldAverage, fermentedIncludedInAverage);
@@ -732,6 +740,8 @@ public class MixCalcActivity extends BaseActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        // 离开页面：棚数仍为 0 的行彻底清空，再落盘
+        settleZeroRows();
         saveAllData();
         saveGlobalWaterPercentage();
         saveFermentedIncludedInWater();
@@ -1350,6 +1360,8 @@ public class MixCalcActivity extends BaseActivity {
             return;
         }
         closeEditorAndIme();
+        // 切批次前先把当前批次里棚数为 0 的行结算掉
+        settleZeroRows();
         pushSettingsToBatch();
         saveAllData();
 
@@ -1834,6 +1846,11 @@ public class MixCalcActivity extends BaseActivity {
         return false;
     }
 
+    // 5 种饲料列：发酵料 + 粉料 / 0.3 / 0.5 / 1.0
+    private boolean isFeedColumn(String columnId) {
+        return "fermented".equals(columnId) || isNonFermentedFeedColumn(columnId);
+    }
+
     // 非发酵料列的下标（0=粉 1=0.3 2=0.5 3=1.0），不是非发酵料列返回 -1
     private int nonFermentedIndex(String columnId) {
         for (int i = 0; i < NF_FEED_COLUMNS.length; i++) {
@@ -1934,6 +1951,10 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     private String getCellInitialValue(FeedData data, String columnId) {
+        // 棚数为 0：5 种饲料列不显示数据（格子本身还是置灰的），底层数据等失焦结算再清
+        if (data.getShedCount() <= 0 && isFeedColumn(columnId)) {
+            return "";
+        }
         switch (columnId) {
             case "shed_number":
                 return data.getShedNumber();
@@ -1957,6 +1978,13 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     private String getCellDisplayValue(FeedData data, String columnId) {
+        if (data.getShedCount() <= 0) {
+            // 棚数为 0：平均/水/称料纯空白（白底），不显示 0 也不显示旧数据
+            if ("average_feed".equals(columnId) || "water".equals(columnId)
+                    || "weighed_feed".equals(columnId)) {
+                return "";
+            }
+        }
         switch (columnId) {
             case "seq":
                 return "";

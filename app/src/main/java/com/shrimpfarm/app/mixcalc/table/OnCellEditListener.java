@@ -17,4 +17,8 @@ public interface OnCellEditListener {
 
     // 点了编辑态右下角的「下一行 ▾」按钮：同列向下，跳到哪一行也由宿主定
     void onEditNextRow(int row, String columnId);
+
+    // 编辑结束：浮层收起，或提交后换到别的格。宿主在这里做「失焦结算」
+    // （棚数仍为 0 的行彻底清空），换格和收起都会回调。
+    void onCellEditEnd(int row, String columnId);
 }
