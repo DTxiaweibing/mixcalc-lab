@@ -17,6 +17,7 @@ import android.widget.TextView;
 
 import com.shrimpfarm.app.R;
 import com.shrimpfarm.app.mixcalc.model.FeedData;
+import com.shrimpfarm.app.mixcalc.model.ShedDisplay;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -128,6 +129,32 @@ public class MixCalcTableView extends ViewGroup {
             this.rows.addAll(rows);
         }
         requestRebuild();
+    }
+
+    /**
+     * 行回收后调用：编辑浮层和「下一行」按钮还攥着删除前的行号，
+     * 按删除下标整体上移；正在编辑的行如果自己被删了就收起浮层。
+     * 必须在 setRows() 之前调用（平移完再重灌行数）。
+     */
+    public void onRowsRecycled(List<Integer> removedIndices) {
+        if (removedIndices == null || removedIndices.isEmpty()) {
+            return;
+        }
+        editor.shiftRowsAfterRemoval(removedIndices);
+        if (nextRowBtn_row >= 0) {
+            if (removedIndices.contains(nextRowBtn_row)) {
+                hideNextRowButton();
+            } else {
+                int shift = 0;
+                for (int idx : removedIndices) {
+                    if (idx < nextRowBtn_row) {
+                        shift++;
+                    }
+                }
+                nextRowBtn_row -= shift;
+                layoutNextRowButton();
+            }
+        }
     }
     /** 切换批次后把横向/纵向滚动位置复位。 */
     public void resetScroll() {
@@ -260,6 +287,28 @@ public class MixCalcTableView extends ViewGroup {
         int x = metrics.xOf(vi, offsetX);
         int y = metrics.yOfRow(row, offsetY);
         return new Rect(x, y, x + col.widthPx, y + metrics.rowHeight);
+    }
+
+    // 本地坐标命中的行 / 列，给"点到哪儿了"的判断用（弹窗外点击作废待转池）
+    public int rowAtLocal(float x, float y) {
+        if (!metricsReady || metrics.visual.isEmpty()) {
+            return -1;
+        }
+        if (y < metrics.headerHeight || y >= getHeight() - metrics.footerHeight) {
+            return -1;
+        }
+        return metrics.rowAt(y, offsetY);
+    }
+
+    public String columnIdAtLocal(float x, float y) {
+        if (!metricsReady || metrics.visual.isEmpty()) {
+            return null;
+        }
+        if (y < metrics.headerHeight || y >= getHeight() - metrics.footerHeight) {
+            return null;
+        }
+        int vi = metrics.visualIndexAt(x, offsetX);
+        return vi < 0 ? null : metrics.visual.get(vi).id;
     }
 
     // 表尾行高度（px）：弹窗最多长到表尾上沿，再高就内部滚动
@@ -929,15 +978,26 @@ public class MixCalcTableView extends ViewGroup {
         }
     }
 
-    // 棚号列专用：字号固定、不缩放；超宽换行，最多 2 行，再长加省略号
+    // 棚号列展示态专用：ShedDisplay.render 两行极简折叠、省略号只来自折叠算法、
+    // 放不下裁掉、系统不补任何 "…"。
+    // 字号固定 16dp：不乘任何缩放系数、不按内容自适应、也不跟随系统字体大小
+    //（用 density 而不是 scaledDensity 换算）。放不放得下由列宽保证
+    //（columnWidths 里 shed_number = 72dp，9 字符一行约 70dp）。
+    private static final int SHED_TEXT_SIZE_DP = 16;
+
     private void drawWrappedCellText(Canvas canvas, String text, int left, int top, int right, int bottom,
                                      int color, Paint paint) {
         if (TextUtils.isEmpty(text)) {
             return;
         }
         paint.setColor(color);
-        float avail = (right - left) - 6f;
-        List<String> lines = wrapLines(text, paint, avail, 2);
+        List<String> lines = ShedDisplay.render(text);
+        if (lines.isEmpty()) {
+            return;
+        }
+        // 固定字号，不随内容、不随系统字体设置变（textPaint 是共用的，画完必须还原）
+        float originalTextSize = paint.getTextSize();
+        paint.setTextSize(dp(getContext(), SHED_TEXT_SIZE_DP));
         Paint.FontMetrics fm = paint.getFontMetrics();
         float lineH = fm.descent - fm.ascent;
         float totalH = lineH * lines.size();
@@ -951,49 +1011,8 @@ public class MixCalcTableView extends ViewGroup {
             canvas.drawText(line, cx, startY + i * lineH, paint);
         }
         canvas.restore();
-    }
 
-    private List<String> wrapLines(String text, Paint paint, float maxWidth, int maxLines) {
-        List<String> lines = new ArrayList<>();
-        int n = text.length();
-        int start = 0;
-        while (start < n && lines.size() < maxLines) {
-            int end = start;
-            int lastSep = -1;
-            while (end < n && paint.measureText(text.substring(start, end + 1)) <= maxWidth) {
-                char c = text.charAt(end);
-                if (c == ',' || c == '，' || c == '、' || c == ' ' || c == '-') {
-                    lastSep = end;
-                }
-                end++;
-            }
-            if (end >= n) {
-                lines.add(text.substring(start));
-                start = n;
-                break;
-            }
-            if (lines.size() == maxLines - 1) {
-                lines.add(ellipsize(text.substring(start), paint, maxWidth));
-                start = n;
-                break;
-            }
-            int cut = lastSep > start ? lastSep + 1 : Math.max(start + 1, end);
-            lines.add(text.substring(start, cut).trim());
-            start = cut;
-            while (start < n && text.charAt(start) == ' ') {
-                start++;
-            }
-        }
-        return lines;
-    }
-
-    private String ellipsize(String text, Paint paint, float maxWidth) {
-        String ellipsis = "…";
-        String s = text;
-        while (s.length() > 1 && paint.measureText(s + ellipsis) > maxWidth) {
-            s = s.substring(0, s.length() - 1);
-        }
-        return s + ellipsis;
+        paint.setTextSize(originalTextSize);
     }
 
     private void drawHeader(Canvas canvas) {

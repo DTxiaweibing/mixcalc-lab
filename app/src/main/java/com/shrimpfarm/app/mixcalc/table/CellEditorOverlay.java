@@ -14,6 +14,8 @@ import android.widget.EditText;
 
 import com.shrimpfarm.app.R;
 
+import java.util.List;
+
 // 单元格编辑浮层。整张表就一个 EditText，哪个格要编辑就贴到它上面。
 // 输入法、焦点、光标都是原生的，手感跟以前每个格各带一个 EditText 时一样。
 // begin 打开并弹键盘；文本一变就回调 onCellCommitted（保持边输边算）；
@@ -161,6 +163,34 @@ class CellEditorOverlay {
         table.hideNextRowButton();
         // 收起浮层 = 失去焦点：宿主在这里结算棚数为 0 的行
         notifyEditEnd();
+    }
+
+    /**
+     * 行回收后的行号平移：正在编辑的行上面有行被删，就把行号跟着上移；
+     * 自己这行被删了就直接丢弃收起——行都没了，绝不能把浮层里的字
+     * 提交到补位上来的那行去（那会是张冠李戴）。
+     */
+    void shiftRowsAfterRemoval(List<Integer> removedIndices) {
+        if (removedIndices == null || removedIndices.isEmpty() || !editing) {
+            return;
+        }
+        if (removedIndices.contains(row)) {
+            editing = false;
+            dirty = false;
+            editText.setVisibility(View.GONE);
+            table.hideNextRowButton();
+            return;
+        }
+        int shift = 0;
+        for (int idx : removedIndices) {
+            if (idx < row) {
+                shift++;
+            }
+        }
+        if (shift > 0) {
+            row -= shift;
+            layoutChild();
+        }
     }
 
     // 表格滚过之后跟着挪，滚出可见区就结束

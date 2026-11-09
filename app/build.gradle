@@ -20,8 +20,8 @@ android {
         namespace "com.shrimpfarm.app"
         minSdkVersion 28
         targetSdkVersion 36
-        versionCode 10
-        versionName "0.3.7"
+        versionCode 9
+        versionName "0.3.6"
         multiDexEnabled true
     }
     compileOptions {

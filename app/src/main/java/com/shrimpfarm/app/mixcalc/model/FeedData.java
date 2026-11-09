@@ -5,7 +5,12 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 public class FeedData {
+    // 用户填的棚号原文 = 这行的“声明”。打点覆盖不会改写它，所以后面的行缩小/清空时，
+    // 被占走的号还能原样退回这行。落盘存的就是它。
     private String shedNumber;
+    // 显示文本 = 打点覆盖后这行“实际拥有”的号码。纯派生，不落盘，每次覆盖计算刷新；
+    // 为 null 表示还没算过，显示回落到 shedNumber。
+    private String shedDisplay;
     private int shedCount;
     // 第 1 行专用：锚点值，手改后的显示值。
     // 第一行显示值 = shedCountBase - (后面各行之和 - shedCountBaseSum)
@@ -374,9 +379,24 @@ public class FeedData {
         return shedNumber != null ? shedNumber : "";
     }
 
+    /**
+     * 用户声明/落盘的棚号原文。打点覆盖不会动它——被后行占走的号只是“暂时不归你”，
+     * 后行改小之后还会退回来。
+     */
     public void setShedNumber(String shedNumber) {
         this.shedNumber = shedNumber != null ? shedNumber : "";
+        // 申明变了，派生显示就失效，等下一次打点覆盖重新算；不清会留下旧文本对不上新声明
+        this.shedDisplay = null;
         calculateShedCount();
+    }
+
+    /** 实际拥有的棚号文本（派生值）；没算过时回落到声明原文。 */
+    public String getShedDisplay() {
+        return shedDisplay != null ? shedDisplay : getShedNumber();
+    }
+
+    public void setShedDisplay(String shedDisplay) {
+        this.shedDisplay = shedDisplay;
     }
 
     public int getShedCount() {

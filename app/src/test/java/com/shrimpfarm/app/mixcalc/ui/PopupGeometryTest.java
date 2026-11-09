@@ -4,7 +4,7 @@ import static org.junit.Assert.assertEquals;
 
 import org.junit.Test;
 
-/** 表头弹窗定位：右边缘对齐 + 屏幕内夹紧。 */
+/** 弹窗定位：表头右边缘对齐、棚号气泡左边缘对齐 + 屏幕内夹紧。 */
 public class PopupGeometryTest {
 
     @Test
@@ -35,5 +35,29 @@ public class PopupGeometryTest {
         assertEquals(1080, PopupGeometry.fullWidth(1080));
         assertEquals(2100, PopupGeometry.fullWidth(2100));
         assertEquals(1, PopupGeometry.fullWidth(0));
+    }
+
+    @Test
+    public void leftEdgeAlignsToCell() {
+        // 棚数格左边 300 → 弹窗左边也是 300，不因为弹窗宽就往左挪
+        assertEquals(300, PopupGeometry.leftAlignedX(300, 1080));
+        assertEquals(0, PopupGeometry.leftAlignedX(0, 1080));
+    }
+
+    @Test
+    public void leftAlignNeverLeavesWindow() {
+        // 格子被横向滚出左边：夹回 0；滚出右边：夹到窗口内最后一个像素
+        assertEquals(0, PopupGeometry.leftAlignedX(-120, 1080));
+        assertEquals(1079, PopupGeometry.leftAlignedX(2000, 1080));
+    }
+
+    @Test
+    public void leftAlignedWidthLeavesRightMargin() {
+        // 左边 300、窗口 1080、右边留 8 → 最多 772
+        assertEquals(772, PopupGeometry.leftAlignedWidth(800, 300, 1080, 8));
+        // 本来就窄，不动
+        assertEquals(300, PopupGeometry.leftAlignedWidth(300, 100, 1080, 8));
+        // 右边只剩一点点：宽度跟着缩，至少 1
+        assertEquals(2, PopupGeometry.leftAlignedWidth(800, 1070, 1080, 8));
     }
 }

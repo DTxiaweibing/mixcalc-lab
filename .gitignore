@@ -27,3 +27,7 @@ keystore.properties
 
 # 打包产物
 /dist/
+
+# 临时帧/工作目录（不入库）
+.tmp-frames/
+.workbuddy/

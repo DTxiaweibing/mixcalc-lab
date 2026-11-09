@@ -26,6 +26,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
@@ -48,6 +49,9 @@ import com.shrimpfarm.app.R;
 import com.shrimpfarm.app.mixcalc.model.FeedData;
 import com.shrimpfarm.app.mixcalc.model.RowSettlement;
 import com.shrimpfarm.app.mixcalc.model.ShedCoverage;
+import com.shrimpfarm.app.mixcalc.model.ShedDeletePlan;
+import com.shrimpfarm.app.mixcalc.model.ShedDraft;
+import com.shrimpfarm.app.mixcalc.model.ShedText;
 import com.shrimpfarm.app.mixcalc.prefs.MixCalcPrefs;
 import com.shrimpfarm.app.mixcalc.model.Batch;
 import com.shrimpfarm.app.mixcalc.table.TabletLayout;
@@ -65,10 +69,14 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class MixCalcActivity extends BaseActivity {
 
@@ -94,9 +102,28 @@ public class MixCalcActivity extends BaseActivity {
     private int editBeginRow = -1;
     private String editBeginColumn;
     private double editBeginValue;
+    // 正在编辑棚号格：每敲一个字符就全表重算（棚数、料量、别人的棚号文本都跟着变）
+    private boolean editingShedNumber;
+    // 进入棚号编辑那一刻的全表文本快照。每次按键都从快照重新推导，而不是在上一次结果上叠加：
+    // "16-40" 打到一半是 "16-4"，会被解析成 4~16 抢走别人的号；没有快照这步就是永久改写，
+    // 输完也还不回来。从快照重推 → 半成品只影响这一帧，输完立刻恢复。
+    private List<String> shedEditSnapshot;
+    private int shedEditRow = -1;
 
     // 棚数按钮点开的棚号气泡
     private PopupWindow shedListPopup;
+    // 待转池：只记号码和来源行，来源行的数据一个字都不动。
+    // 只有"点开另一行的气泡 → 菜单里点【转入】"才真正执行；其它任何一次按下都作废。
+    private List<Integer> pendingTransferNumbers;
+    private int pendingTransferSourceRow = -1;
+    // 转出后气泡要自己关掉，这一下关窗不能把刚记下的待转池清掉
+    private boolean keepPendingOnPopupDismiss;
+
+    private static final int SHED_ACTION_SELECT_ALL = 0;
+    private static final int SHED_ACTION_SELECT_INVERT = 1;
+    private static final int SHED_ACTION_DELETE = 2;
+    private static final int SHED_ACTION_TRANSFER_OUT = 3;
+    private static final int SHED_ACTION_TRANSFER_IN = 4;
     // 超上限提示别每敲一个字弹一次
     private long lastOverLimitToastAt = 0;
 
@@ -116,7 +143,9 @@ public class MixCalcActivity extends BaseActivity {
 
     private String[] columnNames;
 
-    private final int[] columnWidths = {40, 60, 40, 40, 60, 60, 60, 60, 60, 60, 60};
+    // shed_number 72dp：棚号列字号与其它列一致（16sp），9 字符一行的折叠结果
+    // 最宽约 70dp（如 "…9-15 17"），60dp 会把首尾裁掉，故单独加宽
+    private final int[] columnWidths = {40, 72, 40, 40, 60, 60, 60, 60, 60, 60, 60};
 
     // 平板适配相关成员变量
     private boolean isTabletMode = false;
@@ -173,7 +202,8 @@ public class MixCalcActivity extends BaseActivity {
                 case "seq":
                     return String.valueOf(row + 1);
                 case "shed_number":
-                    return data.getShedNumber();
+                    // 显示的是“实际拥有”的号，不是用户原文；两者不同时以覆盖结果为准
+                    return data.getShedDisplay();
                 case "water":
                 case "average_feed":
                 case "weighed_feed":
@@ -322,6 +352,12 @@ public class MixCalcActivity extends BaseActivity {
             editBeginRow = row;
             editBeginColumn = columnId;
             editBeginValue = data == null ? 0 : getFeedValueByColumn(data, columnId);
+            editingShedNumber = "shed_number".equals(columnId);
+            if (editingShedNumber) {
+                // 记下全表原始文本：打字途中所有重算都从这份快照出发，可随时回退
+                shedEditRow = row;
+                shedEditSnapshot = snapshotShedTexts();
+            }
             // 第一次点第一行棚号：告诉用户格式，并给一个"查看帮助"入口
             if (row == 0 && "shed_number".equals(columnId) && !MixCalcPrefs.isShedInputHintShown(MixCalcActivity.this)) {
                 MixCalcPrefs.setShedInputHintShown(MixCalcActivity.this);
@@ -331,6 +367,9 @@ public class MixCalcActivity extends BaseActivity {
 
         @Override
         public void onCellCommitted(int row, String columnId, String text) {
+            // 每个字符都提交：全表重算棚数/料量，别人的棚号文本也跟着按实际归属改写。
+            // 半成品区间（"16-4"）不会改坏别人的号——applyShedCoverage 每次从编辑前的
+            // 快照重新推导，上一帧的临时结果不带进下一帧。
             commitCell(row, columnId, text);
         }
 
@@ -346,7 +385,37 @@ public class MixCalcActivity extends BaseActivity {
 
         @Override
         public void onCellEditEnd(int row, String columnId) {
-            settleZeroRows();
+            // 棚号这一格输完了：把快照作废，按最终文本做一次全表定稿重排
+            //（打字途中别人的文本已经是改写过的临时结果，这一遍把它们钉死）
+            boolean wasShedNumber = "shed_number".equals(columnId);
+            // 原本有棚号、被一个字一个字删到空：这行彻底没棚了，等于用户把这行作废，
+            // 要和气泡里删除一样把整行回收掉，不能让表中间留个洞
+            boolean emptiedByTyping = false;
+            if (wasShedNumber) {
+                FeedData rowData = getData(row);
+                String before = (shedEditSnapshot != null && row >= 0 && row < shedEditSnapshot.size())
+                        ? shedEditSnapshot.get(row) : null;
+                emptiedByTyping = before != null && !before.trim().isEmpty()
+                        && rowData != null
+                        && rowData.getShedNumber().trim().isEmpty()
+                        && rowData.getShedCount() <= 0;
+            }
+            editingShedNumber = false;
+            shedEditSnapshot = null;
+            shedEditRow = -1;
+            if (wasShedNumber) {
+                applyRowChange(row);
+            }
+            // 换格流程正攥着旧行号开新格（begin 先回调这里再落行号），此刻同步删行
+            // 会让新格开到错的行上。推迟到本轮交互结束、新格已打开之后再结算：
+            // 删行时编辑浮层的行号由 onRowsRecycled 平移，不会错位。
+            final Set<Integer> emptied = emptiedByTyping
+                    ? Collections.singleton(row) : null;
+            if (table != null) {
+                table.post(() -> settleZeroRows(emptied));
+            } else {
+                settleZeroRows(emptied);
+            }
         }
     };
 
@@ -505,6 +574,7 @@ public class MixCalcActivity extends BaseActivity {
             return;
         }
         String value = text == null ? "" : text.trim();
+        Log.d(TAG, "提交 第" + (row + 1) + "行 " + columnId + " = [" + value + "]");
 
         switch (columnId) {
             case "shed_number": {
@@ -586,6 +656,8 @@ public class MixCalcActivity extends BaseActivity {
         if (data == null) {
             return;
         }
+        Log.d(TAG, "重算 第" + (row + 1) + "行 棚号=[" + data.getShedNumber() + "] 棚数="
+                + data.getShedCount() + " 平均=" + data.getAverage());
 
         // 先按打点覆盖算出权威棚数（棚数真的变了才按旧平均重算料量），再刷新派生值：
         // 顺序反了会拿“本行棚号自己数的个数”当权威值，和别的行重叠时
@@ -599,9 +671,33 @@ public class MixCalcActivity extends BaseActivity {
         saveAllData();
     }
 
-    // 失焦结算：棚数仍为 0 的行当新行处理（棚号保留，只清料/水/平均/称料）
+    // 失焦结算：有效棚数为 0 的行整行回收——数据清空、从列表移除、下面的行序号自动上移，
+    // 底部补一行新空行保持总行数不变。只在结算时刻调用（换格收起、切批次、退出、载入），
+    // 编辑途中绝不动行（显示层早就把 0 棚行的料列置灰了，数据等结算再清）。
     private void settleZeroRows() {
-        if (dataList == null || !RowSettlement.settleZeroRows(dataList)) {
+        settleZeroRows(null);
+    }
+
+    /**
+     * @param emptiedByUser 本次被用户删空的行的下标（删棚号删到一点不剩）：
+     *                      这些行虽然已经变成纯空行，也要回收，否则表中间会留洞。
+     */
+    private void settleZeroRows(Set<Integer> emptiedByUser) {
+        if (dataList == null) {
+            return;
+        }
+        // 先回收再兜底清：回收的判断要看“有没有填过数据”，先清了会把只剩数据的脏行漏成中间空行
+        List<Integer> removed = RowSettlement.recycleDeadRows(dataList, emptiedByUser);
+        boolean changed = !removed.isEmpty();
+        if (RowSettlement.settleZeroRows(dataList)) {
+            changed = true;
+        }
+        if (!changed) {
+            return;
+        }
+        if (!removed.isEmpty()) {
+            Log.d(TAG, "行回收 删除" + removed.size() + "行 下标=" + removed);
+            finishRowRemoval(removed);
             return;
         }
         if (table != null) {
@@ -611,9 +707,47 @@ public class MixCalcActivity extends BaseActivity {
         saveAllData();
     }
 
+    // 行级销毁的统一收尾（行已从 dataList 移除）：底部补空行保持总行数、
+    // 编辑浮层/「下一行」按钮的行号平移、重灌表格、重算、落盘
+    private void finishRowRemoval(List<Integer> removedIndices) {
+        // 底部补空行，总数回到 TOTAL_ROWS，录入容量不减
+        for (int i = 0; i < removedIndices.size(); i++) {
+            dataList.add(new FeedData());
+        }
+        // 待转池的来源行可能刚被回收，作废最稳
+        clearPendingTransfer();
+        // 棚号气泡还开着就关掉，别让它的回调攥着旧行号
+        if (shedListPopup != null) {
+            shedListPopup.dismiss();
+        }
+        if (table != null) {
+            // 编辑浮层/「下一行」按钮的行号先平移，再重灌行数
+            table.onRowsRecycled(removedIndices);
+            table.setRows(dataList);
+            table.notifyAllChanged();
+        }
+        recomputeFirstRowRemainder();
+        updateFooterRow();
+        saveAllData();
+    }
+
     // 所有行一视同仁：只做打点覆盖（后行优先），没有“第 1 行 = 总棚数”这回事
     private void recomputeFirstRowRemainder() {
         applyShedCoverage();
+    }
+
+    /**
+     * 全表棚号文本快照（进入棚号编辑时拍一张）。返回 null 表示当前没有可用的基线。
+     */
+    private List<String> snapshotShedTexts() {
+        if (dataList == null) {
+            return null;
+        }
+        List<String> texts = new ArrayList<>();
+        for (FeedData d : dataList) {
+            texts.add(d == null ? "" : d.getShedNumber());
+        }
+        return texts;
     }
 
     // 打点覆盖：按行序铺开棚号，后行优先；棚数变化的那几行顺带重算派生值
@@ -625,14 +759,49 @@ public class MixCalcActivity extends BaseActivity {
         for (FeedData d : dataList) {
             texts.add(d == null ? "" : d.getShedNumber());
         }
-        List<List<Integer>> sets = ShedCoverage.ownedSets(texts);
+
+        // 打字途中：以“进入编辑前的快照”为基线，只把正在编辑的这一行换成当前输入，
+        // 再整体推导一遍。这样每一个按键都是全量重算（别人的文本、棚数、料量都跟着动），
+        // 而半成品 "16-4" 造成的临时归属只存在于这一帧——下一帧又从干净基线重来。
+        boolean liveTyping = editingShedNumber
+                && shedEditSnapshot != null
+                && shedEditSnapshot.size() == texts.size()
+                && shedEditRow >= 0
+                && shedEditRow < texts.size();
+
+        int[] counts;
+        List<String> canonical;
+        if (liveTyping) {
+            ShedDraft.Result draft = ShedDraft.recompute(
+                    shedEditSnapshot, shedEditRow, texts.get(shedEditRow));
+            counts = draft.getCounts();
+            canonical = draft.getTexts();
+        } else {
+            // 棚号文本按“实际归属”校正：号码被后面的行占走的行，文本重写成它真正拥有的号码，
+            // 这样 1-40 被下面一行写入 1-15 之后会显示成 16-40，看到的号码 = 参与算料的号码。
+            canonical = ShedCoverage.renormalize(texts);
+            List<List<Integer>> sets = ShedCoverage.ownedSets(texts);
+            counts = new int[sets.size()];
+            for (int i = 0; i < sets.size(); i++) {
+                counts[i] = sets.get(i).size();
+            }
+        }
+
         for (int i = 0; i < dataList.size(); i++) {
             FeedData d = dataList.get(i);
             if (d == null) {
                 continue;
             }
-            int count = sets.get(i).size();
-            if (d.getShedCount() != count) {
+            int oldCount = d.getShedCount();
+            // 只刷新“显示文本”，绝不回写声明原文：1-40 被下面一行占走 1-15 时显示 16-40，
+            // 但申明里仍然留着 1-40——把下面那行改小/清空，15 个号会自己退回来。
+            d.setShedDisplay(canonical.get(i));
+            int count = counts[i];
+            // 比较用的是改写文本之前的棚数：setShedNumber 会按新文本重算棚数，
+            // 改写后再比就永远相等，料量/水就不会跟着新棚数重算了
+            if (oldCount != count) {
+                Log.d(TAG, "覆盖 第" + (i + 1) + "行 棚数 " + oldCount + "→" + count
+                        + " 平均=" + d.getAverage());
                 // 棚数变了：平均不动，料量按“平均 × 新棚数”重算。
                 // 用存储的平均值，不要用 getAverage(...) 现算——它会被本行
                 // 棚号自己数的个数影响，重叠时算出的平均是错的。
@@ -740,6 +909,8 @@ public class MixCalcActivity extends BaseActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        // 退到后台：待转池只在内存，直接作废
+        clearPendingTransfer();
         // 离开页面：棚数仍为 0 的行彻底清空，再落盘
         settleZeroRows();
         saveAllData();
@@ -763,6 +934,8 @@ public class MixCalcActivity extends BaseActivity {
 
     // 窗口尺寸/形态变了：重算平板判定与列宽，旧菜单直接关掉，下次打开按新窗口判断。
     private void onWindowMetricsChanged() {
+        // 转屏 / 折叠 / 分屏都不是"点开另一行气泡"，待转池作废
+        clearPendingTransfer();
         initTabletAdaptiveSettings();
         dismissOpenPopups();
         rebuildCompleteTable();
@@ -780,23 +953,31 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 棚数按钮 → 本行棚号气泡：上边贴格子下沿，左边缘对齐棚数格
-    private void showShedListPopup(int row) {
+    // 棚数按钮 → 本行棚号气泡：上边贴格子下沿，左边缘对齐棚数格。
+    // 点号码进入选中（绿 → 蓝），⋮ 菜单做 全选/反选/删除/转出，另一行还多一个【转入】。
+    private void showShedListPopup(final int row) {
         try {
             FeedData data = getData(row);
-            if (data == null || data.getShedCount() <= 0) {
+            if (data == null) {
                 return;
             }
             List<Integer> numbers = shedNumbersOf(row);
-            if (numbers.isEmpty()) {
+            // 打开条件：本行棚号有内容（哪怕棚数被后行盖成 0），或者有待转池要往这行转入。
+            // 两者都没有就没什么可点的，跟以前一样不弹。
+            boolean hasShedText = data.getShedDisplay() != null
+                    && !data.getShedDisplay().trim().isEmpty();
+            boolean canTransferIn = hasPendingTransfer() && row != pendingTransferSourceRow;
+            if (numbers.isEmpty() && !hasShedText && !canTransferIn) {
                 return;
             }
             if (shedListPopup != null) {
                 shedListPopup.dismiss();
             }
+            // 每次打开都是全新的选择态；待转池不受影响（它只在"关掉气泡却没转入"时作废）
+            final Set<Integer> selected = new LinkedHashSet<>();
+            final Map<Integer, TextView> chips = new LinkedHashMap<>();
 
             DisplayMetrics dm = getResources().getDisplayMetrics();
-            int screenW = dm.widthPixels;
             int screenH = dm.heightPixels;
             // 字号上限：系统字体放大最多按 1.0 倍算，免得弹窗字被系统放大得过大
             float cappedScale = Math.min(dm.scaledDensity, dm.density);
@@ -816,8 +997,24 @@ public class MixCalcActivity extends BaseActivity {
             count.setTextColor(0xFF666666);
             count.setSingleLine(true);
 
+            // ⋮ 菜单入口：全选 / 反选 / 删除 / 转出 / 转入
+            // 点击区域放宽：左右各留一段 padding + 最小 48dp 宽、占满表头 40dp 高
+            TextView more = new TextView(this);
+            more.setText("⋮");
+            more.setTextSize(TypedValue.COMPLEX_UNIT_PX, 20f * cappedScale);
+            more.setTypeface(Typeface.DEFAULT_BOLD);
+            more.setTextColor(0xFF333333);
+            more.setGravity(Gravity.CENTER);
+            more.setIncludeFontPadding(false);
+            more.setPadding(dpToPx(16), 0, dpToPx(12), 0);
+            more.setMinWidth(dpToPx(48));
+            more.setMinHeight(dpToPx(40));
+            more.setClickable(true);
+            more.setContentDescription(getString(R.string.mix_shed_menu_more));
+
             int headerNeedW = (int) (title.getPaint().measureText(title.getText().toString())
-                    + count.getPaint().measureText(count.getText().toString())) + dpToPx(30);
+                    + count.getPaint().measureText(count.getText().toString()))
+                    + dpToPx(30) + dpToPx(58);
 
             // 量出号码块的真实尺寸：最小 28dp 圆点，数字变宽自动撑成胶囊
             Paint chipPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -831,26 +1028,38 @@ public class MixCalcActivity extends BaseActivity {
             int pitch = chipW + dpToPx(2);
             int padH = dpToPx(6) * 2;
 
-            // 宽度 = max(标题所需, 能排下的整块号码宽度)，上限 80% 屏宽
-            int maxAllowed = Math.min((int) (screenW * 0.8), screenW - dpToPx(8));
+            // 锚点先算：左边缘贴住棚数格左边缘，右边留 4dp
+            int windowW = getScreenWidth();
+            int[] loc = new int[2];
+            table.getLocationOnScreen(loc);
+            Rect cellRect = table.getCellRect(row, "shed_count");
+            int x = PopupGeometry.leftAlignedX(loc[0] + cellRect.left, windowW);
+            int y = loc[1] + cellRect.bottom + dpToPx(2);
+
+            // 宽度 = max(标题所需, 能排下的整块号码宽度)，上限 80% 窗口宽，
+            // 还要让到不越过窗口右边缘：宁可窄一点让号码多换几行，也不把弹窗往左挪，
+            // 一挪左边缘就对不上棚数格了（标题是单行 + 省略号，窄了也不会折行）
+            int maxAllowed = Math.min((int) (windowW * 0.8), windowW - dpToPx(8));
+            int spaceRight = windowW - dpToPx(4) - x;
+            if (spaceRight >= dpToPx(120)) {
+                maxAllowed = PopupGeometry.leftAlignedWidth(maxAllowed, x, windowW, dpToPx(4));
+            } else {
+                // 棚数格被横向滚到最右、右边实在没地方：只能往左挪，别把弹窗挤成一条缝
+                x = Math.max(dpToPx(6), windowW - maxAllowed - dpToPx(4));
+            }
             int perRow = Math.max(1, (maxAllowed - padH) / pitch);
             int w = Math.max(headerNeedW, padH + perRow * pitch);
             if (w > maxAllowed) {
                 w = maxAllowed;
             }
             perRow = Math.max(1, (w - padH) / pitch);
-
-            // 左边缘对齐棚数格；右边放不下就往左挪，不压缩宽度（压缩会把标题挤折行）
-            int[] loc = new int[2];
-            table.getLocationOnScreen(loc);
-            Rect cellRect = table.getCellRect(row, "shed_count");
-            int x = loc[0] + cellRect.left;
-            int y = loc[1] + cellRect.bottom + dpToPx(2);
-            x = Math.min(x, screenW - w - dpToPx(4));
-            x = Math.max(dpToPx(6), x);
+            final int popupWidthPx = w;
 
             int rows = (numbers.size() + perRow - 1) / perRow;
-            int scrollH = rows * (dpToPx(28) + dpToPx(2)) + dpToPx(18);
+            // 没有棚号（被后行盖光 / 只等转入）时留一块空白位置放提示文字
+            int scrollH = numbers.isEmpty()
+                    ? dpToPx(46)
+                    : rows * (dpToPx(28) + dpToPx(2)) + dpToPx(18);
             int headH = dpToPx(41);
             // 弹窗最高只长到表尾行上沿：超过就内部滚动，不再盖住表尾
             int footerTopOnScreen = loc[1] + table.getHeight() - table.getFooterHeightPx();
@@ -878,11 +1087,16 @@ public class MixCalcActivity extends BaseActivity {
             LinearLayout header = new LinearLayout(this);
             header.setOrientation(LinearLayout.HORIZONTAL);
             header.setGravity(Gravity.CENTER_VERTICAL);
-            header.setPadding(dpToPx(10), 0, dpToPx(10), 0);
+            header.setPadding(dpToPx(10), 0, dpToPx(4), 0);
 
             header.addView(title, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             header.addView(count);
+            // 和前面的“共 N 个”之间留出 10dp，别贴在一起
+            LinearLayout.LayoutParams moreLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            moreLp.setMargins(dpToPx(10), 0, 0, 0);
+            header.addView(more, moreLp);
 
             card.addView(header, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(40)));
@@ -892,15 +1106,32 @@ public class MixCalcActivity extends BaseActivity {
             card.addView(divider, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
-            FlowLayout flow = new FlowLayout(this);
-            flow.setPadding(dpToPx(6), dpToPx(10), dpToPx(6), dpToPx(8));
-            for (int n : numbers) {
-                flow.addView(buildShedChip(n));
-            }
-
-            ScrollView scroll = new ScrollView(this);
+            final ScrollView scroll = new ScrollView(this);
             scroll.setVerticalScrollBarEnabled(true);
-            scroll.addView(flow);
+            if (numbers.isEmpty()) {
+                // 行里已经没有自己的棚号了（被后行盖光，或纯粹是转入目标）
+                TextView empty = new TextView(this);
+                empty.setText(getString(R.string.mix_shed_list_empty));
+                empty.setTextSize(TypedValue.COMPLEX_UNIT_PX, 12f * cappedScale);
+                empty.setTextColor(0xFF888888);
+                empty.setPadding(dpToPx(14), dpToPx(14), dpToPx(14), dpToPx(14));
+                scroll.addView(empty);
+            } else {
+                FlowLayout flow = new FlowLayout(this);
+                flow.setPadding(dpToPx(6), dpToPx(10), dpToPx(6), dpToPx(8));
+                for (final int n : numbers) {
+                    final TextView chip = buildShedChip(n);
+                    chips.put(n, chip);
+                    chip.setOnClickListener(v -> {
+                        if (!selected.remove(n)) {
+                            selected.add(n);
+                        }
+                        applyShedChipStyle(chip, selected.contains(n));
+                    });
+                    flow.addView(chip);
+                }
+                scroll.addView(flow);
+            }
             card.addView(scroll, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, scrollH));
 
@@ -909,12 +1140,33 @@ public class MixCalcActivity extends BaseActivity {
             popup.setOutsideTouchable(true);
             popup.setFocusable(true);
             popup.setElevation(dpToPx(8));
-            popup.setOnDismissListener(() -> shedListPopup = null);
+            popup.setOnDismissListener(() -> {
+                shedListPopup = null;
+                if (keepPendingOnPopupDismiss) {
+                    // 转出后自己关的窗：待转池还要留着等转入
+                    keepPendingOnPopupDismiss = false;
+                } else {
+                    // 气泡关掉了却没走来转入这条路，这次转出作废
+                    clearPendingTransfer();
+                }
+            });
             shedListPopup = popup;
+
+            more.setOnClickListener(v -> showShedMenu(row, numbers, selected, chips,
+                    header, popupWidthPx, popup));
             popup.showAtLocation(table, Gravity.NO_GRAVITY, x, y);
         } catch (Exception e) {
             Log.e(TAG, "showShedListPopup: " + e.getMessage(), e);
         }
+    }
+
+    // 号码块选中态：绿底黑字 ↔ 蓝底白字
+    private void applyShedChipStyle(TextView chip, boolean selected) {
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(selected ? 0xFF2F6FED : 0xFFA8DDB5);
+        bg.setCornerRadius(dpToPx(14));
+        chip.setBackground(bg);
+        chip.setTextColor(selected ? Color.WHITE : Color.BLACK);
     }
 
     private TextView buildShedChip(int number) {
@@ -939,6 +1191,363 @@ public class MixCalcActivity extends BaseActivity {
         lp.setMargins(0, 0, dpToPx(2), dpToPx(2));
         chip.setLayoutParams(lp);
         return chip;
+    }
+
+    // ==================== 棚号气泡：⋮ 菜单 / 删除 / 转出 / 转入 ====================
+
+    private void showShedMenu(final int row, final List<Integer> numbers,
+                              final Set<Integer> selected, final Map<Integer, TextView> chips,
+                              final View anchor, final int popupWidth, final PopupWindow popup) {
+        final List<Integer> actions = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        actions.add(SHED_ACTION_SELECT_ALL);
+        labels.add(getString(R.string.mix_shed_sel_all));
+        actions.add(SHED_ACTION_SELECT_INVERT);
+        labels.add(getString(R.string.mix_shed_sel_invert));
+        if (!selected.isEmpty()) {
+            actions.add(SHED_ACTION_DELETE);
+            labels.add(getString(R.string.mix_shed_delete));
+            actions.add(SHED_ACTION_TRANSFER_OUT);
+            labels.add(getString(R.string.mix_shed_transfer_out));
+        }
+        // 转入：只要不是来源行自己，上下都能转——
+        // 往下转靠后行优先压过来；往上转靠把来源行的单号删掉，号码自动退回给它上面的行
+        if (hasPendingTransfer() && row != pendingTransferSourceRow) {
+            actions.add(SHED_ACTION_TRANSFER_IN);
+            labels.add(getString(R.string.mix_shed_transfer_in));
+        }
+
+        try {
+            PopupWindow menu = createListPopup(getString(R.string.mix_shed_menu_title),
+                    labels.toArray(new String[0]), (dialog, which) -> {
+                        if (which < 0 || which >= actions.size()) {
+                            return;
+                        }
+                        handleShedMenuAction(actions.get(which), row, numbers, selected, chips,
+                                popup);
+                    });
+            // 菜单右边缘跟气泡右边缘对齐（header 左边缘就是气泡左边缘）
+            int offsetX = Math.max(0, popupWidth - listPopupWidth() - dpToPx(10));
+            menu.showAsDropDown(anchor, offsetX, dpToPx(2));
+        } catch (Exception e) {
+            Log.e(TAG, "showShedMenu: " + e.getMessage(), e);
+        }
+    }
+
+    private void handleShedMenuAction(int action, int row, List<Integer> numbers,
+                                      Set<Integer> selected, Map<Integer, TextView> chips,
+                                      PopupWindow popup) {
+        switch (action) {
+            case SHED_ACTION_SELECT_ALL:
+            case SHED_ACTION_SELECT_INVERT: {
+                boolean all = action == SHED_ACTION_SELECT_ALL;
+                for (int n : numbers) {
+                    boolean on = all || !selected.contains(n);
+                    if (on) {
+                        selected.add(n);
+                    } else {
+                        selected.remove(n);
+                    }
+                    TextView chip = chips.get(n);
+                    if (chip != null) {
+                        applyShedChipStyle(chip, on);
+                    }
+                }
+                break;
+            }
+            case SHED_ACTION_DELETE: {
+                confirmDeleteShedNumbers(row, selected, popup);
+                break;
+            }
+            case SHED_ACTION_TRANSFER_OUT: {
+                // 只把号码记进待转池，来源行的数据一个字都不改，气泡直接关掉
+                startPendingTransfer(row, selected);
+                if (popup != null && popup.isShowing()) {
+                    // 这次关窗是转出自己关的，别把刚记下的待转池清掉
+                    keepPendingOnPopupDismiss = true;
+                    popup.dismiss();
+                }
+                break;
+            }
+            case SHED_ACTION_TRANSFER_IN: {
+                applyTransferIn(row);
+                if (popup != null && popup.isShowing()) {
+                    popup.dismiss();
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    // 删除 = 这些棚卖了：从本行的棚号里剔掉（区间不动），然后整表重算。
+    //
+    // 「有地方退就退」：本行拥有的号如果上面某行还申明着（原本是从那儿退下来的），
+    // 这里只把它从本行申明里拿掉，号会立刻退回上面那行继续算料；
+    // 「没地方退就等于删除」：别的行都没有它，本行剔掉就是全表消失。
+    // 两种情况动作相同——只动本行申明。所以绝不能像 0.3.14 那样把号从全表每行一起删，
+    // 那会把本该退回来源行的号一块儿埋掉。
+    private void confirmDeleteShedNumbers(final int row, Set<Integer> selected,
+                                          final PopupWindow popup) {
+        final List<Integer> targets = new ArrayList<>(selected);
+        if (targets.isEmpty()) {
+            return;
+        }
+        // 点了删除就不是转入这条路，待转池作废
+        clearPendingTransfer();
+        // 先算清楚这批号的去向：上面某行还申明着的会退回（不是真删），
+        // 上面没有任何来路的才是彻底消失——确认框里必须把它们点名，别让用户以为都只是"挪个位置"
+        List<String> declared = new ArrayList<>();
+        if (dataList != null) {
+            for (FeedData d : dataList) {
+                declared.add(d == null ? "" : d.getShedNumber());
+            }
+        }
+        ShedDeletePlan plan = ShedDeletePlan.of(declared, row, targets);
+        showStyledConfirmDialog70(
+                getString(R.string.mix_shed_delete_title),
+                buildShedDeleteMessage(plan),
+                new String[]{getString(R.string.btn_cancel), getString(R.string.mix_shed_delete)},
+                new int[]{0xFF333333, 0xFFD32F2F},
+                new DialogInterface.OnClickListener[]{null, (dialog, which) -> {
+                    FeedData data = getData(row);
+                    if (data == null) {
+                        return;
+                    }
+                    String oldText = data.getShedNumber();
+                    String newText = ShedText.remove(oldText, targets);
+                    if (!newText.equals(oldText)) {
+                        Log.d(TAG, "删除 第" + (row + 1) + "行 号码=" + targets
+                                + " 棚号 [" + oldText + "] → [" + newText + "]");
+                        data.setShedNumber(newText);
+                        applyRowChange(row);
+                    }
+                    // 号删光了：这行既没棚号也没棚数，它就是一张废纸，整行回收，
+                    // 下面的行往上顶，底部补空行（见 settleZeroRows 的 emptiedByUser）
+                    final Set<Integer> emptied = new LinkedHashSet<>();
+                    if (data.getShedNumber().trim().isEmpty() && data.getShedCount() <= 0) {
+                        emptied.add(row);
+                    }
+                    if (table != null) {
+                        // 推迟到弹窗关完再删行，否则回调里攥着的行号会立刻错位
+                        table.post(() -> settleZeroRows(emptied));
+                    }
+                    if (popup != null) {
+                        popup.dismiss();
+                    }
+                }});
+    }
+
+    /**
+     * 删除确认框的正文：说清楚"会退回上面"和"真被删掉"各有多少个，
+     * 后半段把要真删的号码点名（升序、连号收区间），用户才知道自己删掉的是什么。
+     */
+    private String buildShedDeleteMessage(ShedDeletePlan plan) {
+        int fallback = plan.getFallback().size();
+        int permanent = plan.getPermanent().size();
+        if (permanent > 0 && fallback > 0) {
+            return getString(R.string.mix_shed_delete_msg_mixed,
+                    fallback + permanent, fallback, permanent,
+                    compactNumberList(plan.getPermanent()));
+        }
+        if (permanent > 0) {
+            return getString(R.string.mix_shed_delete_msg_permanent,
+                    permanent, compactNumberList(plan.getPermanent()));
+        }
+        return getString(R.string.mix_shed_delete_msg_fallback, fallback);
+    }
+
+    /** 号码列表压成一行；太长就只列前 12 个，别把确认框撑出屏幕。 */
+    private String compactNumberList(List<Integer> numbers) {
+        if (numbers == null || numbers.isEmpty()) {
+            return "";
+        }
+        String full = ShedText.normalize(numbers);
+        if (full.length() <= 80) {
+            return full;
+        }
+        List<Integer> head = new ArrayList<>(numbers.subList(0, Math.min(12, numbers.size())));
+        return ShedText.normalize(head) + " …（共 " + numbers.size() + " 个）";
+    }
+
+    private boolean hasPendingTransfer() {
+        return pendingTransferSourceRow >= 0
+                && pendingTransferNumbers != null
+                && !pendingTransferNumbers.isEmpty();
+    }
+
+    private void startPendingTransfer(int row, Set<Integer> selected) {
+        if (selected == null || selected.isEmpty()) {
+            return;
+        }
+        pendingTransferNumbers = new ArrayList<>(selected);
+        pendingTransferSourceRow = row;
+        Log.d(TAG, "转出 记录待转池 来源第" + (row + 1) + "行 号码=" + pendingTransferNumbers
+                + "（来源行数据不动，等另一行点【转入】才真正搬走）");
+    }
+
+    private void clearPendingTransfer() {
+        pendingTransferNumbers = null;
+        pendingTransferSourceRow = -1;
+        keepPendingOnPopupDismiss = false;
+    }
+
+    // 转入：号码池的作用就是任意行之间随便转，所以上下都要能走通。
+    //   往下转：来源行一个字都不用动——目标行在下面，后行优先自然把这批号压过去，
+    //          来源行的 20-30 这种连续段也原样留着（不白拆）。
+    //   往上转：来源行必须真的松手，否则它还在下面压着。单号直接删；号在连续段里
+    //          就只能把这段拆开（20-30 去 25 → 20-24 26-30），拆完自动退回给
+    //          包着它的上一行（父辈/爷辈）。
+    // 目标行补写规则：落在它最小号~最大号之间的不写，范围外的按空格接到末尾。
+    private void applyTransferIn(int targetRow) {
+        if (!hasPendingTransfer() || targetRow == pendingTransferSourceRow) {
+            Log.d(TAG, "转入放弃：池子空或目标行就是来源行 target=" + targetRow);
+            clearPendingTransfer();
+            return;
+        }
+        final List<Integer> numbers = new ArrayList<>(pendingTransferNumbers);
+        final int sourceRow = pendingTransferSourceRow;
+        FeedData target = getData(targetRow);
+        FeedData source = getData(sourceRow);
+        if (target == null) {
+            Log.d(TAG, "转入放弃：目标行没数据 target=" + targetRow);
+            clearPendingTransfer();
+            return;
+        }
+        String oldTarget = target.getShedNumber();
+        String oldSource = source == null ? "" : source.getShedNumber();
+        boolean sourceHadContent = oldSource != null && !oldSource.trim().isEmpty();
+        boolean targetHadContent = oldTarget != null && !oldTarget.trim().isEmpty();
+
+        // 防呆：整行的号全转给一个空行，等于只是把整行往下挪一格（来源行被回收、下面整体
+        // 上移），屏幕闪一下却什么都没变——直接不让转；目标行不是空的（真合并）才照常转。
+        if (targetRow != sourceRow
+                && ShedText.pointlessWholeRowMove(oldTarget, shedNumbersOf(sourceRow), numbers)) {
+            Log.d(TAG, "转入放弃：整行转到空行（只会闪一下） 来源第" + (sourceRow + 1)
+                    + "行→目标第" + (targetRow + 1) + "行");
+            Toast.makeText(this, getString(R.string.mix_shed_transfer_whole_to_blank),
+                    Toast.LENGTH_SHORT).show();
+            clearPendingTransfer();
+            return;
+        }
+
+        // 两边文本都按"转移后的实际号码"重排重写（升序、连号合成区间）。
+        // 没有任何"落在目标范围内就跳过"的暗规则——文本里的号就是这行认领的号，
+        // 棚数归谁由打点覆盖（后行优先）说了算。
+        String[] moved = ShedText.transfer(oldSource, oldTarget, numbers);
+
+        Log.d(TAG, "转入 开始 第" + (sourceRow + 1) + "行→第" + (targetRow + 1) + "行 号码=" + numbers
+                + " | 来源棚号 [" + oldSource + "] → [" + moved[0] + "]"
+                + " | 目标棚号 [" + oldTarget + "] → [" + moved[1] + "]");
+
+        // 先把池子清掉：后面 commitCell 可能弹提示，别让池子停在半路
+        clearPendingTransfer();
+
+        if (source != null) {
+            commitCell(sourceRow, "shed_number", moved[0]);
+        }
+        commitCell(targetRow, "shed_number", moved[1]);
+
+        // 重排：把两行文本重写成各自"实际拥有"的号码（覆盖之后的真相），
+        // 别的行后来居上抢走的号不再挂在文本里，后续转移不再被幽灵号干扰
+        rewriteToOwned(sourceRow);
+        rewriteToOwned(targetRow);
+        forceRecomputeRows(sourceRow, targetRow);
+
+        FeedData t = getData(targetRow);
+        FeedData s = getData(sourceRow);
+        Log.d(TAG, "转入 完成 目标第" + (targetRow + 1) + "行 棚数="
+                + (t == null ? -1 : t.getShedCount()) + " 棚号=[" + (t == null ? "" : t.getShedNumber()) + "]"
+                + " 平均=" + (t == null ? 0 : t.getAverage())
+                + " | 来源第" + (sourceRow + 1) + "行 棚数="
+                + (s == null ? -1 : s.getShedCount()) + " 棚号=[" + (s == null ? "" : s.getShedNumber()) + "]");
+
+        // 一次算齐所有该回收的行：被转空的两行 + 别的死行（幽灵号清掉后露出来的），
+        // 一起删、一次上顶。分两次删会让用户看到"先进一行、再进一行"。
+        Set<Integer> emptied = new LinkedHashSet<>();
+        if (s != null && s.getShedCount() <= 0 && sourceHadContent) {
+            emptied.add(sourceRow);
+        }
+        if (t != null && t.getShedCount() <= 0 && targetHadContent) {
+            emptied.add(targetRow);
+        }
+        List<Integer> toRecycle = RowSettlement.recycleDeadRows(dataList, emptied);
+        if (!toRecycle.isEmpty()) {
+            Log.d(TAG, "行回收（转空） 删除" + toRecycle.size() + "行 下标=" + toRecycle);
+            finishRowRemoval(toRecycle);
+        }
+    }
+
+    // 重排：把一行的棚号文本重写成它"实际拥有"的号码（打点覆盖、后行优先之后的真相），
+    // 升序、连号合成区间。转移 / 删除之后调用，保证文本永远和棚数对得上。
+    private void rewriteToOwned(int row) {
+        FeedData data = getData(row);
+        if (data == null || dataList == null) {
+            return;
+        }
+        List<String> texts = new ArrayList<>();
+        for (FeedData d : dataList) {
+            texts.add(d == null ? "" : d.getShedNumber());
+        }
+        List<List<Integer>> sets = ShedCoverage.ownedSets(texts);
+        if (row < 0 || row >= sets.size()) {
+            return;
+        }
+        String owned = ShedText.normalize(sets.get(row));
+        String current = data.getShedNumber() == null ? "" : data.getShedNumber().trim();
+        if (!owned.equals(current)) {
+            Log.d(TAG, "重排 第" + (row + 1) + "行 棚号 [" + current + "] → [" + owned + "]");
+            commitCell(row, "shed_number", owned);
+        }
+    }
+
+    // 一次动好几行的操作（转入）收尾用：先跑打点覆盖，再把参与的行强制重算一遍派生值
+    private void forceRecomputeRows(int... rows) {
+        if (dataList == null) {
+            return;
+        }
+        applyShedCoverage();
+        for (int r : rows) {
+            FeedData d = getData(r);
+            if (d != null) {
+                d.updateAllCalculations(globalWaterPercentage,
+                        fermentedIncludedInWater, fermentedIncludedInAverage);
+            }
+        }
+        if (table != null) {
+            table.notifyAllChanged();
+        }
+        updateFooterRow();
+        saveAllData();
+    }
+
+    // 防呆：待转池有号码时，除了"点另一行的棚数格"，任何一次按下都把它作废
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (ev.getActionMasked() == MotionEvent.ACTION_DOWN && hasPendingTransfer()
+                && !isTapOnOtherRowShedCount(ev)) {
+            clearPendingTransfer();
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    private boolean isTapOnOtherRowShedCount(MotionEvent ev) {
+        if (table == null || table.getWidth() <= 0) {
+            return false;
+        }
+        int[] loc = new int[2];
+        table.getLocationInWindow(loc);
+        float lx = ev.getX() - loc[0];
+        float ly = ev.getY() - loc[1];
+        if (lx < 0 || ly < 0 || lx >= table.getWidth() || ly >= table.getHeight()) {
+            return false;
+        }
+        if (!"shed_count".equals(table.columnIdAtLocal(lx, ly))) {
+            return false;
+        }
+        int row = table.rowAtLocal(lx, ly);
+        return row >= 0 && row != pendingTransferSourceRow;
     }
 
     private List<Integer> shedNumbersOf(int row) {
@@ -1360,6 +1969,8 @@ public class MixCalcActivity extends BaseActivity {
             return;
         }
         closeEditorAndIme();
+        // 切批次：待转池作废（号码只在本批次内有意义）
+        clearPendingTransfer();
         // 切批次前先把当前批次里棚数为 0 的行结算掉
         settleZeroRows();
         pushSettingsToBatch();
@@ -1821,19 +2432,20 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     // 第一次点第一行「棚号」：提示怎么填，并可直接进帮助（只提示一次）
+    // 按钮顺序按用户习惯：确认类（知道了）放右手边
     private void showShedInputHint() {
         showStyledConfirmDialog70(
                 getString(R.string.mix_shed_hint_title),
                 getString(R.string.mix_shed_hint_msg),
-                new String[]{getString(R.string.mix_btn_got_it), getString(R.string.mix_btn_view_help)},
+                new String[]{getString(R.string.mix_btn_view_help), getString(R.string.mix_btn_got_it)},
                 new int[]{0xFF2D8C42, 0xFF2D8C42},
                 new DialogInterface.OnClickListener[]{
+                        (dialog, which) -> showHelpPanel(),
                         (dialog, which) -> {
                             if (table != null) {
                                 table.beginEdit(0, "shed_number");
                             }
-                        },
-                        (dialog, which) -> showHelpPanel()
+                        }
                 });
     }
 
@@ -1957,7 +2569,8 @@ public class MixCalcActivity extends BaseActivity {
         }
         switch (columnId) {
             case "shed_number":
-                return data.getShedNumber();
+                // 点进去编辑时给的是屏幕上看到的文本（实际拥有的号），改完就按这个重新声明
+                return data.getShedDisplay();
             case "shed_count":
                 return data.getShedCount() == 0 ? "" : String.valueOf(data.getShedCount());
             case "average_feed":
@@ -1989,7 +2602,7 @@ public class MixCalcActivity extends BaseActivity {
             case "seq":
                 return "";
             case "shed_number":
-                String shedName = data.getShedNumber();
+                String shedName = data.getShedDisplay();
                 return (shedName == null || shedName.isEmpty()) ? "" : shedName;
             case "average_feed":
                 // 使用新的方法获取平均吃料值，考虑是否包含发酵料

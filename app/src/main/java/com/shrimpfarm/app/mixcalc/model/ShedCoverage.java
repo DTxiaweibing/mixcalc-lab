@@ -146,6 +146,38 @@ public final class ShedCoverage {
         return sets;
     }
 
+    /**
+     * 按“实际归属”校正每行棚号文本。
+     *
+     * <p>一行文本里的号码被后面的行占走后，这行的有效棚数就变小了，但文本还写着原来的
+     * 范围——看到的号码和参与算料的号码对不上。比如第 1 行写 {@code 1-40}、第 2 行写
+     * {@code 1-15}，第 1 行只剩 16-40，文本就该显示 {@code 16-40}。</p>
+     *
+     * <p>已有号码一个没被别人占走的行原样返回（保留用户自己的写法，如
+     * {@code 24-40 1-20} 不会被重排）；棚数为 0 的行也原样返回——它马上要被整行
+     * 回收，清成空白会留下一个中间空洞。</p>
+     *
+     * @return 与入参等长的文本列表
+     */
+    public static List<String> renormalize(List<String> texts) {
+        List<String> out = new ArrayList<>();
+        if (texts == null) {
+            return out;
+        }
+        List<List<Integer>> owned = ownedSets(texts);
+        for (int i = 0; i < texts.size(); i++) {
+            String original = texts.get(i) == null ? "" : texts.get(i).trim();
+            List<Integer> mine = owned.get(i);
+            // owned 一定是自己文本的子集，数量不等就说明有号被后面的行占走了
+            if (!mine.isEmpty() && mine.size() != parseShedNumbers(original).size()) {
+                out.add(ShedText.normalize(mine));
+            } else {
+                out.add(original);
+            }
+        }
+        return out;
+    }
+
     /** 打点覆盖：返回每行实际棚数。 */
     public static int[] ownedCounts(List<String> texts) {
         List<List<Integer>> sets = ownedSets(texts);
