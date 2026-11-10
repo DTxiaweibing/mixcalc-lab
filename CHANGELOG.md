@@ -161,7 +161,9 @@
 
 ### 构建
 
-- Release 包同时启用 V1 / V2 / V3 三种签名方案。
+- Release 包签名实测为 **APK Signature Scheme v3**（证书 CN=夏卫兵，SHA-256 `d68ac3d8…47ac76`，与 0.3.5 为同一张证书，可覆盖安装）。
+  `enableV1/V2/V3Signing` 虽三项全开，但 `minSdk 28`（Android 9）下 AGP 只落 v3 块：V1 仅 Android 6 及以下需要，
+  V2 已被 V3 覆盖，属正常行为，不影响任何目标设备安装。
 
 ## [0.3.5] - 2026-11-01
 
