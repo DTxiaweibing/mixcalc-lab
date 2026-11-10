@@ -1395,11 +1395,10 @@ public class MixCalcActivity extends BaseActivity {
 
     // 转入：号码池的作用就是任意行之间随便转，所以上下都要能走通。
     //   往下转：来源行一个字都不用动——目标行在下面，后行优先自然把这批号压过去，
-    //          来源行的 20-30 这种连续段也原样留着（不白拆）。
+    //          来源行的 20-30 这种连续段也原样留着（不白拆），日后来路还在。
     //   往上转：来源行必须真的松手，否则它还在下面压着。单号直接删；号在连续段里
     //          就只能把这段拆开（20-30 去 25 → 20-24 26-30），拆完自动退回给
     //          包着它的上一行（父辈/爷辈）。
-    // 目标行补写规则：落在它最小号~最大号之间的不写，范围外的按空格接到末尾。
     private void applyTransferIn(int targetRow) {
         if (!hasPendingTransfer() || targetRow == pendingTransferSourceRow) {
             Log.d(TAG, "转入放弃：池子空或目标行就是来源行 target=" + targetRow);
@@ -1432,12 +1431,19 @@ public class MixCalcActivity extends BaseActivity {
             return;
         }
 
-        // 两边文本都按"转移后的实际号码"重排重写（升序、连号合成区间）。
-        // 没有任何"落在目标范围内就跳过"的暗规则——文本里的号就是这行认领的号，
-        // 棚数归谁由打点覆盖（后行优先）说了算。
-        String[] moved = ShedText.transfer(oldSource, oldTarget, numbers);
+        // 方向决定改哪一边：
+        //   往下转（目标在下面）→ giveDown：来源行原文一个字不动，只把号写进目标行。
+        //       后行优先会让来源行自然少算，但它的申明还留着，目标行以后清空/删除时
+        //       号能自动退回来源行。绝不能把来源行重排成"实际拥有"——那等于把这批号
+        //       的来路抹掉，之后目标行一清空就只剩真删除（号码凭空消失）。
+        //   往上转（目标在上面）→ transfer：来源行在下面压着，必须真的松手号才会走。
+        boolean downward = targetRow > sourceRow;
+        String[] moved = downward
+                ? ShedText.giveDown(oldSource, oldTarget, numbers)
+                : ShedText.transfer(oldSource, oldTarget, numbers);
 
         Log.d(TAG, "转入 开始 第" + (sourceRow + 1) + "行→第" + (targetRow + 1) + "行 号码=" + numbers
+                + (downward ? "（往下转，来源行保留原文）" : "（往上转，来源行松手）")
                 + " | 来源棚号 [" + oldSource + "] → [" + moved[0] + "]"
                 + " | 目标棚号 [" + oldTarget + "] → [" + moved[1] + "]");
 
@@ -1449,10 +1455,6 @@ public class MixCalcActivity extends BaseActivity {
         }
         commitCell(targetRow, "shed_number", moved[1]);
 
-        // 重排：把两行文本重写成各自"实际拥有"的号码（覆盖之后的真相），
-        // 别的行后来居上抢走的号不再挂在文本里，后续转移不再被幽灵号干扰
-        rewriteToOwned(sourceRow);
-        rewriteToOwned(targetRow);
         forceRecomputeRows(sourceRow, targetRow);
 
         FeedData t = getData(targetRow);
@@ -1479,28 +1481,10 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
-    // 重排：把一行的棚号文本重写成它"实际拥有"的号码（打点覆盖、后行优先之后的真相），
-    // 升序、连号合成区间。转移 / 删除之后调用，保证文本永远和棚数对得上。
-    private void rewriteToOwned(int row) {
-        FeedData data = getData(row);
-        if (data == null || dataList == null) {
-            return;
-        }
-        List<String> texts = new ArrayList<>();
-        for (FeedData d : dataList) {
-            texts.add(d == null ? "" : d.getShedNumber());
-        }
-        List<List<Integer>> sets = ShedCoverage.ownedSets(texts);
-        if (row < 0 || row >= sets.size()) {
-            return;
-        }
-        String owned = ShedText.normalize(sets.get(row));
-        String current = data.getShedNumber() == null ? "" : data.getShedNumber().trim();
-        if (!owned.equals(current)) {
-            Log.d(TAG, "重排 第" + (row + 1) + "行 棚号 [" + current + "] → [" + owned + "]");
-            commitCell(row, "shed_number", owned);
-        }
-    }
+    // 这里曾经有个 rewriteToOwned(row)：转移之后把参与行的文本重写成"实际拥有"的号码。
+    // 它会把来源行的申明裁掉——"这些号是从我这儿出去的"这条记录随之消失，目标行以后
+    // 清空或删除时，这些号在上方已经没人申明，只能判成真删除，号码凭空消失。
+    // 现在往下转走 ShedText.giveDown（来源行原文不动），不要再把裁剪加回来。
 
     // 一次动好几行的操作（转入）收尾用：先跑打点覆盖，再把参与的行强制重算一遍派生值
     private void forceRecomputeRows(int... rows) {

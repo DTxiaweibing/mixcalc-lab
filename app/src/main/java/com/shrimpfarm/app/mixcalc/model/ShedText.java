@@ -15,6 +15,8 @@ import java.util.TreeSet;
  * <ul>
  *   <li>转移（{@link #transfer}）：按号码集合换主人，两边文本都按转移后的实际号码
  *       重排重写——没有任何"落在范围内就跳过"的暗规则，号码换没换主人由打点覆盖说了算；</li>
+ *   <li>往下转（{@link #giveDown}）：来源行原文不动，只把号写进下面的目标行。
+ *       来源行留着"这些号从我这儿出去"的记录，目标行以后清空就能自动退回；</li>
  *   <li>拿走号码（{@link #remove}，删除/卖出用）：单号直接删；号写在连续段里就把这段拆开
  *       （1-40 去掉 5 → 1-4 6-40），否则原行还在算着这个棚，等于没删。</li>
  * </ul>
@@ -60,6 +62,31 @@ public final class ShedText {
             return "";
         }
         return compress(numbers);
+    }
+
+    /**
+     * 往下转（目标行在来源行下面）：返回 [新来源文本, 新目标文本]。
+     *
+     * <p>来源行<b>原文一个字不动</b>，目标行把这批号收进自己的文本。棚数归谁由打点覆盖
+     * （后行优先）决定，来源行自然少算——但它的申明还在。</p>
+     *
+     * <p>为什么不能像 {@link #transfer} 那样把来源行重排成"实际拥有"：那段原文就是这行的账本，
+     * 记着"这些号是从我这儿出去的"。一旦裁掉，目标行以后清空或删除时，
+     * 这些号在上方<b>没人申明</b>了，只能判成真删除，凭空消失。
+     * 留着原文，目标行一清空，号就自动退回来源行继续算料。</p>
+     */
+    public static String[] giveDown(String sourceText, String targetText, Collection<Integer> numbers) {
+        Set<Integer> target = new TreeSet<>(ShedCoverage.parseShedNumbers(targetText));
+        if (numbers != null) {
+            for (Integer n : numbers) {
+                if (n == null || n <= 0) {
+                    continue;
+                }
+                target.add(n);
+            }
+        }
+        String keep = sourceText == null ? "" : sourceText.trim();
+        return new String[]{keep, normalize(target)};
     }
 
     /**
