@@ -139,6 +139,8 @@ class CellEditorOverlay {
         if (editText.getVisibility() != View.VISIBLE) {
             editText.setVisibility(View.VISIBLE);
         }
+        // 目标格可能在屏幕外：先滚过去，再摆浮层（对齐鸿蒙 moveEditor → ensureEditorVisible）
+        table.revealCell(row, column.id);
         layoutChild();
         if (!editText.hasFocus()) {
             editText.requestFocus();

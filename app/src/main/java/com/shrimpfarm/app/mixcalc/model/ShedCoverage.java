@@ -16,8 +16,8 @@ import java.util.TreeSet;
  */
 public final class ShedCoverage {
 
-    /** 棚号上限：超过的段整段不计入，由 findOverLimit 给提示。 */
-    public static final int MAX_SHED_NUMBER = 1000;
+    /** 棚号上限：超过的段整段不计入，由 findOverLimit 给提示。（与鸿蒙版同为 99） */
+    public static final int MAX_SHED_NUMBER = 99;
     /** 区间最多展开多少个，防误输入撑爆内存。 */
     private static final int MAX_RANGE_SPAN = 10000;
 

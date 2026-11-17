@@ -57,6 +57,8 @@ public class AssetWebViewActivity extends BaseActivity {
         settings.setJavaScriptEnabled(true);
         settings.setBuiltInZoomControls(false);
         settings.setSupportZoom(false);
+        // 不跟随系统字体缩放：帮助页版式按设计稿固定，放大字号会把图片说明挤出屏幕
+        settings.setTextZoom(100);
 
         String path = getIntent().getStringExtra(EXTRA_ASSET_PATH);
         webView.loadUrl("file:///android_asset/" + resolveAssetPath(path == null ? "" : path));

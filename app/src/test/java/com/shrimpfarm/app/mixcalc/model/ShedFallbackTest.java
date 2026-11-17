@@ -52,15 +52,15 @@ public class ShedFallbackTest {
 
     @Test
     public void threeRowsFallBackInOrder() {
-        List<String> declared = Arrays.asList("1-100", "20-30", "50");
+        List<String> declared = Arrays.asList("1-99", "20-30", "50");
         List<String> shown = display(declared);
-        assertEquals("1-19 31-49 51-100", shown.get(0));
+        assertEquals("1-19 31-49 51-99", shown.get(0));
         assertEquals("20-30", shown.get(1));
         assertEquals("50", shown.get(2));
 
         // 第 3 行清空：50 退回第 1 行
-        List<String> after = display(Arrays.asList("1-100", "20-30", ""));
-        assertEquals("1-19 31-100", after.get(0));
+        List<String> after = display(Arrays.asList("1-99", "20-30", ""));
+        assertEquals("1-19 31-99", after.get(0));
     }
 
     @Test

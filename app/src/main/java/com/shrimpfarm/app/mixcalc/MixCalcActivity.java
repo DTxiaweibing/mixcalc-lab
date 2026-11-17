@@ -16,6 +16,7 @@ import android.graphics.Paint;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.text.InputType;
 import android.text.Spanned;
 import android.text.TextUtils;
@@ -36,7 +37,6 @@ import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -51,6 +51,7 @@ import com.shrimpfarm.app.mixcalc.model.RowSettlement;
 import com.shrimpfarm.app.mixcalc.model.ShedCoverage;
 import com.shrimpfarm.app.mixcalc.model.ShedDeletePlan;
 import com.shrimpfarm.app.mixcalc.model.ShedDraft;
+import com.shrimpfarm.app.mixcalc.model.ShedSnapshotAlignment;
 import com.shrimpfarm.app.mixcalc.model.ShedText;
 import com.shrimpfarm.app.mixcalc.prefs.MixCalcPrefs;
 import com.shrimpfarm.app.mixcalc.model.Batch;
@@ -60,9 +61,13 @@ import com.shrimpfarm.app.mixcalc.table.CellTextProvider;
 import com.shrimpfarm.app.mixcalc.table.MixCalcTableView;
 import com.shrimpfarm.app.mixcalc.table.OnCellEditListener;
 import com.shrimpfarm.app.mixcalc.table.OnCellTapListener;
+import com.shrimpfarm.app.mixcalc.table.NextActionGate;
+import com.shrimpfarm.app.mixcalc.table.NextRowTarget;
 import com.shrimpfarm.app.mixcalc.table.TableColumn;
 import com.shrimpfarm.app.mixcalc.table.TableColumnConfig;
+import com.shrimpfarm.app.mixcalc.ui.AppDialogs;
 import com.shrimpfarm.app.mixcalc.ui.FlowLayout;
+import com.shrimpfarm.app.mixcalc.ui.PillToast;
 import com.shrimpfarm.app.mixcalc.ui.PopupGeometry;
 
 import org.json.JSONArray;
@@ -109,6 +114,14 @@ public class MixCalcActivity extends BaseActivity {
     // 输完也还不回来。从快照重推 → 半成品只影响这一帧，输完立刻恢复。
     private List<String> shedEditSnapshot;
     private int shedEditRow = -1;
+    // 进入棚号编辑那一刻的行对象列表。结算删过行之后（下面整体上移、底部补新空行），
+    // 旧快照的行号就和当前列表对不上，继续按快照重推会把棚数算到别的行上。
+    private List<FeedData> shedEditStartRows;
+
+    // 「下一步 / 下一行」节流：与鸿蒙 lastNextAt 同值 120ms。
+    // 输入法的「下一步」动作偶发重复上报、用户连点也会重复触发；
+    // 每次都结算一遍既费算力，又可能出现「一次按键跳两格」。
+    private long lastNextAt;
 
     // 棚数按钮点开的棚号气泡
     private PopupWindow shedListPopup;
@@ -124,8 +137,8 @@ public class MixCalcActivity extends BaseActivity {
     private static final int SHED_ACTION_DELETE = 2;
     private static final int SHED_ACTION_TRANSFER_OUT = 3;
     private static final int SHED_ACTION_TRANSFER_IN = 4;
-    // 超上限提示别每敲一个字弹一次
-    private long lastOverLimitToastAt = 0;
+    // 超上限提示：一次编辑只弹一次（开始编辑时复位），不是每敲一个字弹一次
+    private boolean overLimitWarned;
 
     // 列管理
     private final Map<String, Boolean> columnVisibility = new HashMap<String, Boolean>();
@@ -143,9 +156,10 @@ public class MixCalcActivity extends BaseActivity {
 
     private String[] columnNames;
 
-    // shed_number 72dp：棚号列字号与其它列一致（16sp），9 字符一行的折叠结果
-    // 最宽约 70dp（如 "…9-15 17"），60dp 会把首尾裁掉，故单独加宽
-    private final int[] columnWidths = {40, 72, 40, 40, 60, 60, 60, 60, 60, 60, 60};
+    // 其余列只能是 40 / 60dp；棚号列 64dp（与鸿蒙同值，扣掉边框后可用约 63dp），
+    // 合计 604dp。手机滚动档用 14dp 字号 / 每行 7 字符，64dp 才能完整放下
+    // "…21-30…" 这类双省略号行；铺满档（窗口 ≥600dp）换 15dp / 9 字符。
+    private final int[] columnWidths = {40, 64, 40, 40, 60, 60, 60, 60, 60, 60, 60};
 
     // 平板适配相关成员变量
     private boolean isTabletMode = false;
@@ -353,10 +367,13 @@ public class MixCalcActivity extends BaseActivity {
             editBeginColumn = columnId;
             editBeginValue = data == null ? 0 : getFeedValueByColumn(data, columnId);
             editingShedNumber = "shed_number".equals(columnId);
+            // 新的一次编辑：超上限提示重新给一次
+            overLimitWarned = false;
             if (editingShedNumber) {
                 // 记下全表原始文本：打字途中所有重算都从这份快照出发，可随时回退
                 shedEditRow = row;
                 shedEditSnapshot = snapshotShedTexts();
+                shedEditStartRows = dataList == null ? null : new ArrayList<>(dataList);
             }
             // 第一次点第一行棚号：告诉用户格式，并给一个"查看帮助"入口
             if (row == 0 && "shed_number".equals(columnId) && !MixCalcPrefs.isShedInputHintShown(MixCalcActivity.this)) {
@@ -390,31 +407,23 @@ public class MixCalcActivity extends BaseActivity {
             boolean wasShedNumber = "shed_number".equals(columnId);
             // 原本有棚号、被一个字一个字删到空：这行彻底没棚了，等于用户把这行作废，
             // 要和气泡里删除一样把整行回收掉，不能让表中间留个洞
-            boolean emptiedByTyping = false;
-            if (wasShedNumber) {
-                FeedData rowData = getData(row);
-                String before = (shedEditSnapshot != null && row >= 0 && row < shedEditSnapshot.size())
-                        ? shedEditSnapshot.get(row) : null;
-                emptiedByTyping = before != null && !before.trim().isEmpty()
-                        && rowData != null
-                        && rowData.getShedNumber().trim().isEmpty()
-                        && rowData.getShedCount() <= 0;
-            }
+            final FeedData emptiedRow =
+                    emptiedByTypingSet(row, columnId) != null ? getData(row) : null;
             editingShedNumber = false;
             shedEditSnapshot = null;
             shedEditRow = -1;
+            shedEditStartRows = null;
             if (wasShedNumber) {
                 applyRowChange(row);
             }
             // 换格流程正攥着旧行号开新格（begin 先回调这里再落行号），此刻同步删行
             // 会让新格开到错的行上。推迟到本轮交互结束、新格已打开之后再结算：
             // 删行时编辑浮层的行号由 onRowsRecycled 平移，不会错位。
-            final Set<Integer> emptied = emptiedByTyping
-                    ? Collections.singleton(row) : null;
+            // 延迟期间行号可能已被「下一步 / 下一行」的同步结算平移，所以按行对象锚定。
             if (table != null) {
-                table.post(() -> settleZeroRows(emptied));
+                table.post(() -> settleZeroRowsFor(emptiedRow));
             } else {
-                settleZeroRows(emptied);
+                settleZeroRowsFor(emptiedRow);
             }
         }
     };
@@ -586,14 +595,10 @@ public class MixCalcActivity extends BaseActivity {
                     data.setAverageManually(oldAverage, fermentedIncludedInAverage);
                 }
                 int over = ShedCoverage.findOverLimit(value);
-                if (over > 0) {
-                    long now = System.currentTimeMillis();
-                    if (now - lastOverLimitToastAt > 1500) {
-                        lastOverLimitToastAt = now;
-                        Toast.makeText(this,
-                                getString(R.string.mix_shed_over_limit, ShedCoverage.MAX_SHED_NUMBER),
-                                Toast.LENGTH_SHORT).show();
-                    }
+                if (over > 0 && !overLimitWarned) {
+                    overLimitWarned = true;
+                    PillToast.show(this, table,
+                            getString(R.string.mix_shed_over_limit, ShedCoverage.MAX_SHED_NUMBER));
                 }
                 break;
             }
@@ -613,7 +618,7 @@ public class MixCalcActivity extends BaseActivity {
                     if (data.mergeSmallerWhenCleared(nfIndex, origin) > 0) {
                         // 细粒径料并入粗粒径料 → 只剩一档，换料完成
                         editBeginValue = 0;
-                        showStyledConfirmDialog70(
+                        AppDialogs.showConfirm(this, 
                                 getString(R.string.mix_dialog_switch_done_title),
                                 getString(R.string.mix_dialog_switch_done_msg),
                                 new String[]{getString(R.string.btn_ok)},
@@ -707,6 +712,43 @@ public class MixCalcActivity extends BaseActivity {
         saveAllData();
     }
 
+    // 延迟结算：按行对象找回它现在的下标；行已经被回收就只做普通兜底结算，
+    // 避免拿过期行号把顶上来的新行当成"用户删空的行"删掉
+    private void settleZeroRowsFor(FeedData emptiedRow) {
+        int index = indexOfRow(emptiedRow);
+        settleZeroRows(index >= 0 ? Collections.singleton(index) : null);
+    }
+
+    // 行对象 → 当前下标（按引用比：空行内容一样，但不是同一行）
+    private int indexOfRow(FeedData target) {
+        if (dataList == null || target == null) {
+            return -1;
+        }
+        for (int i = 0; i < dataList.size(); i++) {
+            if (dataList.get(i) == target) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // 这一行原本有棚号、现在被一个字一个字删空了：结算时要当作用户主动作废回收掉
+    private Set<Integer> emptiedByTypingSet(int row, String columnId) {
+        if (!"shed_number".equals(columnId) || shedEditSnapshot == null
+                || row < 0 || row >= shedEditSnapshot.size()) {
+            return null;
+        }
+        String before = shedEditSnapshot.get(row);
+        FeedData rowData = getData(row);
+        if (before == null || before.trim().isEmpty() || rowData == null) {
+            return null;
+        }
+        if (!rowData.getShedNumber().trim().isEmpty() || rowData.getShedCount() > 0) {
+            return null;
+        }
+        return Collections.singleton(row);
+    }
+
     // 行级销毁的统一收尾（行已从 dataList 移除）：底部补空行保持总行数、
     // 编辑浮层/「下一行」按钮的行号平移、重灌表格、重算、落盘
     private void finishRowRemoval(List<Integer> removedIndices) {
@@ -767,7 +809,10 @@ public class MixCalcActivity extends BaseActivity {
                 && shedEditSnapshot != null
                 && shedEditSnapshot.size() == texts.size()
                 && shedEditRow >= 0
-                && shedEditRow < texts.size();
+                && shedEditRow < texts.size()
+                // 快照必须和当前行逐行还是同一批行：结算删过行之后行号就错位了，
+                // 再按旧快照重推会把棚数/料量按错行写下去
+                && ShedSnapshotAlignment.matches(shedEditStartRows, dataList);
 
         int[] counts;
         List<String> canonical;
@@ -827,81 +872,158 @@ public class MixCalcActivity extends BaseActivity {
         }
     }
 
+    // 下一步 / 下一行 之前的同步结算：当场把该回收的行回收掉（不等表布局回调），
+    // 返回结算后当前行的新下标；当前行已被回收返回 -1
+    private int settleBeforeNavigation(int row, String columnId) {
+        if (dataList == null) {
+            return row;
+        }
+        FeedData anchor = getData(row);
+        settleZeroRows(emptiedByTypingSet(row, columnId));
+        return indexOfRow(anchor);
+    }
+
+    // 「下一步 / 下一行」节流：与鸿蒙 lastNextAt 同值 120ms。
+    // 输入法的「下一步」动作偶发重复上报、用户连点也会重复触发，重复跑一遍会一次跳两格。
+    private boolean allowNextAction() {
+        long now = SystemClock.uptimeMillis();
+        if (!NextActionGate.allow(now, lastNextAt)) {
+            return false;
+        }
+        lastNextAt = now;
+        return true;
+    }
+
+    // 这一格能不能当导航目标：列可见 + 可编辑 + 该行数据允许编辑
+    private boolean isNavigableColumn(int columnIndex, int row) {
+        String id = columnIds[columnIndex];
+        Boolean visible = columnVisibility.get(id);
+        FeedData data = getData(row);
+        return visible != null && visible
+                && isEditableColumn(id)
+                && data != null
+                && isCellEnabled(id, data, row);
+    }
+
+    // 结算 → 按行对象找回目标行 → 开新格。结算把目标行本身回收了就返回 false。
+    private boolean settleThenBeginEdit(int anchorRow, String anchorColumnId,
+                                        int targetRow, String targetColumnId) {
+        FeedData targetRef = getData(targetRow);
+        if (targetRef == null) {
+            return false;
+        }
+        settleBeforeNavigation(anchorRow, anchorColumnId);
+        int relocated = indexOfRow(targetRef);
+        if (relocated < 0) {
+            return false;
+        }
+        return table.beginEdit(relocated, targetColumnId);
+    }
+
+    // 没有下一个可编辑格：收起浮层并隐藏输入法
+    private void endEditAndHideIme() {
+        if (table == null) {
+            return;
+        }
+        table.endEdit();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(table.getWindowToken(), 0);
+        }
+    }
+
     // 移动到下一个可编辑单元格
     private void moveFocusToNextEditableCell(int currentRow, int currentColumnIndex) {
         try {
-            if (currentColumnIndex < 0 || table == null) {
+            if (currentColumnIndex < 0 || currentColumnIndex >= columnIds.length || table == null) {
                 return;
             }
-
-            for (int nextColIndex = currentColumnIndex + 1; nextColIndex < columnIds.length; nextColIndex++) {
-                String nextColumnId = columnIds[nextColIndex];
-                Boolean visible = columnVisibility.get(nextColumnId);
-                if (visible != null && visible && isEditableColumn(nextColumnId)) {
-                    FeedData data = getData(currentRow);
-                    if (data != null && isCellEnabled(nextColumnId, data, currentRow)) {
-                        if (table.beginEdit(currentRow, nextColumnId)) {
-                            return;
-                        }
-                    }
-                }
+            if (!allowNextAction()) {
+                return;
             }
-
-            int nextRow = currentRow + 1;
-            if (dataList != null && nextRow < dataList.size()) {
-                // 跨行前先过一遍顺序规则：下一行是空行且前面还有空行 → 拦住、停在原格
-                if (isOrderBlocked(nextRow)) {
-                    showOrderHintDialog();
-                    return;
-                }
-                for (int colIndex = 0; colIndex < columnIds.length; colIndex++) {
-                    String columnId = columnIds[colIndex];
-                    Boolean visible = columnVisibility.get(columnId);
-                    if (visible != null && visible && isEditableColumn(columnId)) {
-                        FeedData data = getData(nextRow);
-                        if (data != null && isCellEnabled(columnId, data, nextRow)) {
-                            if (table.beginEdit(nextRow, columnId)) {
-                                return;
-                            }
-                        }
-                    }
-                }
+            // 先定目标格、再过顺序规则，最后才结算：被拦住时编辑还留在原格，不能动数据
+            //（对齐鸿蒙 nextCell）。结算删行会让目标行上移，按行对象找回它现在的下标。
+            int[] target = findNextEditableTarget(currentRow, currentColumnIndex);
+            if (target == null) {
+                endEditAndHideIme();
+                return;
             }
-
-            // 没有下一个可编辑格：收起浮层并隐藏输入法
-            table.endEdit();
-            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (imm != null) {
-                imm.hideSoftInputFromWindow(table.getWindowToken(), 0);
+            if (target[0] != currentRow && isOrderBlocked(target[0])) {
+                showOrderHintDialog();
+                return;
             }
-
+            settleThenBeginEdit(currentRow, columnIds[currentColumnIndex],
+                    target[0], columnIds[target[1]]);
         } catch (Exception e) {
             Log.e(TAG, "移动焦点异常: " + e.getMessage());
         }
     }
 
-    // 「下一行 ▾」按钮：同列向下移一行，同样守顺序规则；到底或该列不可编辑就停在原处
+    // 下一个可编辑格（结算前的行/列下标）：先扫本行右侧的列，再逐行向后扫（每行从第一列起）。
+    // 只挑目标，不做顺序判断——跨行的顺序规则由调用方执行。找不到返回 null。
+    private int[] findNextEditableTarget(int currentRow, int currentColumnIndex) {
+        for (int col = currentColumnIndex + 1; col < columnIds.length; col++) {
+            if (isNavigableColumn(col, currentRow)) {
+                return new int[]{currentRow, col};
+            }
+        }
+        if (dataList == null) {
+            return null;
+        }
+        for (int row = currentRow + 1; row < dataList.size(); row++) {
+            for (int col = 0; col < columnIds.length; col++) {
+                if (isNavigableColumn(col, row)) {
+                    return new int[]{row, col};
+                }
+            }
+        }
+        return null;
+    }
+
+    // 「下一行 ▾」按钮：跳到下一行能编辑的格子，同样守顺序规则。
+    // 同一列能进就保持同列；下一行是空行时料量/平均进不去，就退到该行第一个可编辑格（通常是棚号）。
+    // 顺序规则 / 边界 / 目标列都在结算之前判——被拦住时编辑留在原格、不删行（对齐鸿蒙 nextRowDown）。
     private void moveFocusToNextRow(int row, String columnId) {
         try {
             if (table == null || dataList == null) {
                 return;
             }
+            if (!allowNextAction()) {
+                return;
+            }
             int nextRow = row + 1;
-            if (nextRow >= dataList.size()) {
+            FeedData below = getData(nextRow);
+            if (below == null) {
+                // 已经到最后一行：停在原处
                 return;
             }
             if (isOrderBlocked(nextRow)) {
                 showOrderHintDialog();
                 return;
             }
-            FeedData data = getData(nextRow);
-            if (data == null || !isCellEnabled(columnId, data, nextRow)) {
+            int targetCol = NextRowTarget.choose(getColumnIndex(columnId),
+                    enabledColumnsOf(below, nextRow));
+            if (targetCol < 0) {
+                // 下一行一个能编辑的格子都没有，才停在原处（回车到头）
                 return;
             }
-            table.beginEdit(nextRow, columnId);
+            settleThenBeginEdit(row, columnId, nextRow, columnIds[targetCol]);
         } catch (Exception e) {
             Log.e(TAG, "下一行异常: " + e.getMessage());
         }
+    }
+
+    // 「下一行」候选列：可见 + 可编辑 + 该行数据允许编辑
+    private boolean[] enabledColumnsOf(FeedData data, int row) {
+        boolean[] enabled = new boolean[columnIds.length];
+        for (int i = 0; i < columnIds.length; i++) {
+            String id = columnIds[i];
+            Boolean visible = columnVisibility.get(id);
+            enabled[i] = visible != null && visible
+                    && isEditableColumn(id)
+                    && isCellEnabled(id, data, row);
+        }
+        return enabled;
     }
 
     // ==================== 生命周期 ====================
@@ -909,6 +1031,8 @@ public class MixCalcActivity extends BaseActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        // 离页时收起胶囊提示，别让它挂在已不可见的窗口上
+        PillToast.dismiss();
         // 退到后台：待转池只在内存，直接作废
         clearPendingTransfer();
         // 离开页面：棚数仍为 0 的行彻底清空，再落盘
@@ -1218,7 +1342,7 @@ public class MixCalcActivity extends BaseActivity {
         }
 
         try {
-            PopupWindow menu = createListPopup(getString(R.string.mix_shed_menu_title),
+            PopupWindow menu = AppDialogs.createListPopup(this, getString(R.string.mix_shed_menu_title),
                     labels.toArray(new String[0]), (dialog, which) -> {
                         if (which < 0 || which >= actions.size()) {
                             return;
@@ -1227,7 +1351,7 @@ public class MixCalcActivity extends BaseActivity {
                                 popup);
                     });
             // 菜单右边缘跟气泡右边缘对齐（header 左边缘就是气泡左边缘）
-            int offsetX = Math.max(0, popupWidth - listPopupWidth() - dpToPx(10));
+            int offsetX = Math.max(0, popupWidth - AppDialogs.listWidth(this) - dpToPx(10));
             menu.showAsDropDown(anchor, offsetX, dpToPx(2));
         } catch (Exception e) {
             Log.e(TAG, "showShedMenu: " + e.getMessage(), e);
@@ -1305,7 +1429,7 @@ public class MixCalcActivity extends BaseActivity {
             }
         }
         ShedDeletePlan plan = ShedDeletePlan.of(declared, row, targets);
-        showStyledConfirmDialog70(
+        AppDialogs.showConfirm(this, 
                 getString(R.string.mix_shed_delete_title),
                 buildShedDeleteMessage(plan),
                 new String[]{getString(R.string.btn_cancel), getString(R.string.mix_shed_delete)},
@@ -1425,8 +1549,7 @@ public class MixCalcActivity extends BaseActivity {
                 && ShedText.pointlessWholeRowMove(oldTarget, shedNumbersOf(sourceRow), numbers)) {
             Log.d(TAG, "转入放弃：整行转到空行（只会闪一下） 来源第" + (sourceRow + 1)
                     + "行→目标第" + (targetRow + 1) + "行");
-            Toast.makeText(this, getString(R.string.mix_shed_transfer_whole_to_blank),
-                    Toast.LENGTH_SHORT).show();
+            PillToast.show(this, table, getString(R.string.mix_shed_transfer_whole_to_blank));
             clearPendingTransfer();
             return;
         }
@@ -1672,6 +1795,11 @@ public class MixCalcActivity extends BaseActivity {
         }
         // 隐藏列太多时把可见列铺满屏宽（否则右侧留白，像少了一列）
         TabletLayout.fillToWidth(adaptiveColumnWidths, visibleColumns(), getScreenWidth());
+        // 棚号列字号与字符预算取同一判据（与鸿蒙 shedAllColumnsVisible 同源）：
+        // 铺满档 15dp/9 字符，滚动档 14dp/7 字符
+        if (table != null) {
+            table.setShedAllColumnsVisible(isTabletMode);
+        }
     }
 
     private void recalcAdaptiveWidths() {
@@ -1788,6 +1916,8 @@ public class MixCalcActivity extends BaseActivity {
 
         tableConfig = cfg;
         table.setColumnConfig(cfg);
+        // 表尾「重置」钉在右下角（对齐鸿蒙）：横向滚动时不跟着列跑，随时可点
+        table.setPinnedFooterColumn("weighed_feed");
     }
 
     private TableColumn createTableColumn(String id, int widthPx) {
@@ -1827,7 +1957,7 @@ public class MixCalcActivity extends BaseActivity {
             updateFooterRow();
         } catch (Exception e) {
             Log.e(TAG, "重建完整表格异常: " + e.getMessage(), e);
-            Toast.makeText(this, getString(R.string.mix_toast_rebuild_fail), Toast.LENGTH_SHORT).show();
+            PillToast.show(this, table, getString(R.string.mix_toast_rebuild_fail));
         }
     }
 
@@ -2002,116 +2132,16 @@ public class MixCalcActivity extends BaseActivity {
     }
 
     @android.annotation.SuppressLint("InflateParams")
-    private void showStyledConfirmDialog70(String title, String message, String[] buttonTexts, final int[] buttonColors, final DialogInterface.OnClickListener[] listeners) {
-        Dialog dialog = new Dialog(this);
-        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_simple_confirm, null);
-        dialog.setContentView(dialogView);
-
-        TextView tvTitle = dialogView.findViewById(R.id.tv_title);
-        tvTitle.setText(title);
-
-        TextView tvMessage = dialogView.findViewById(R.id.tv_message);
-        tvMessage.setText(message);
-
-        LinearLayout buttonLayout = dialogView.findViewById(R.id.layout_buttons);
-        for (int i = 0; i < buttonTexts.length; i++) {
-            Button btn = new Button(this);
-            btn.setText(buttonTexts[i]);
-            btn.setTextSize(15);
-            btn.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
-            btn.setTextColor(buttonColors != null && i < buttonColors.length ? buttonColors[i] : 0xFF333333);
-            btn.setBackgroundResource(android.R.color.transparent);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-            if (i < buttonTexts.length - 1) {
-                View divider = new View(this);
-                divider.setLayoutParams(new LinearLayout.LayoutParams(1, ViewGroup.LayoutParams.MATCH_PARENT));
-                divider.setBackgroundColor(0xFFE0E0E0);
-                buttonLayout.addView(divider);
-            }
-            final int index = i;
-            btn.setOnClickListener(v -> {
-                if (listeners != null && index < listeners.length && listeners[index] != null) {
-                    listeners[index].onClick(dialog, index);
-                }
-                dialog.dismiss();
-            });
-            buttonLayout.addView(btn, lp);
-        }
-
-        int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        dialog.getWindow().setLayout((int)(screenWidth * 0.7), ViewGroup.LayoutParams.WRAP_CONTENT);
-        dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-        dialog.show();
-    }
-
     // 表头弹窗：PopupWindow 贴在被点表头格左下角，位置跟"换料比例"弹窗一样。
-    // 用 PopupWindow 而不是 Dialog，是因为 Dialog 的窗口默认 gravity 是 CENTER，
-    // 改成 NO_GRAVITY 还是会被系统重新居中，贴不稳格子。
-    /** 构建统一列表弹窗（圆角 + 分隔线 + 40dp 行），返回未显示的实例。 */
-    private PopupWindow createListPopup(String title, String[] items,
-                                        final DialogInterface.OnClickListener listener) {
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setBackgroundResource(R.drawable.bg_dialog);
-
-        TextView tvTitle = new TextView(this);
-        tvTitle.setText(title);
-        tvTitle.setTextSize(18);
-        tvTitle.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
-        tvTitle.setTextColor(0xFF000000);
-        tvTitle.setGravity(Gravity.CENTER);
-        tvTitle.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(12));
-        container.addView(tvTitle);
-        container.addView(createDivider());
-
-        final PopupWindow popup = new PopupWindow(container);
-        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-        popup.setOutsideTouchable(true);
-        popup.setFocusable(true);
-        popup.setElevation(10);
-
-        for (int i = 0; i < items.length; i++) {
-            final int index = i;
-            TextView itemTv = new TextView(this);
-            itemTv.setLayoutParams(new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(40)));
-            itemTv.setText(items[i]);
-            itemTv.setTextSize(15);
-            itemTv.setTextColor(0xFF333333);
-            itemTv.setGravity(Gravity.CENTER);
-            itemTv.setClickable(true);
-            itemTv.setFocusable(true);
-            itemTv.setOnClickListener(v -> {
-                popup.dismiss();
-                if (listener != null) {
-                    listener.onClick(null, index);
-                }
-            });
-            container.addView(itemTv);
-            if (i < items.length - 1) {
-                container.addView(createDivider());
-            }
-        }
-
-        popup.setWidth(listPopupWidth());
-        popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
-        return popup;
-    }
-
-    // 列表弹窗宽度：水比 / 发酵料 / 列操作 / 批次子菜单共用；定位时用同一个宽度算右边缘
-    private int listPopupWidth() {
-        DisplayMetrics dm = getResources().getDisplayMetrics();
-        return Math.min(dm.widthPixels, dpToPx(180));
-    }
+    // 统一构件在 ui/AppDialogs（宽 180dp 的列表弹窗、70% 宽确认框）。
 
     /** 锚定在指定格子下方显示（水比 / 发酵料 / 列操作），右边缘贴住单元格右边缘。 */
     private void showAnchoredListDialog(String title, String[] items, Rect cellRect,
                                         final DialogInterface.OnClickListener listener) {
         try {
-            PopupWindow popup = createListPopup(title, items, listener);
+            PopupWindow popup = AppDialogs.createListPopup(this, title, items, listener);
             DisplayMetrics dm = getResources().getDisplayMetrics();
-            int popupWidth = listPopupWidth();
+            int popupWidth = AppDialogs.listWidth(this);
             int[] loc = new int[2];
             if (table != null) {
                 table.getLocationOnScreen(loc);
@@ -2133,20 +2163,12 @@ public class MixCalcActivity extends BaseActivity {
     private void showCenteredListDialog(String title, String[] items,
                                         final DialogInterface.OnClickListener listener) {
         try {
-            PopupWindow popup = createListPopup(title, items, listener);
+            PopupWindow popup = AppDialogs.createListPopup(this, title, items, listener);
             View anchor = findViewById(R.id.main_layout);
             popup.showAtLocation(anchor, Gravity.CENTER, 0, 0);
         } catch (Exception e) {
             Log.e(TAG, "showCenteredListDialog: " + e.getMessage(), e);
         }
-    }
-
-    private View createDivider() {
-        View divider = new View(this);
-        divider.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 1));
-        divider.setBackgroundColor(0xFFE0E0E0);
-        return divider;
     }
 
     // 显示发酵料计算设置的对话框（四个选项）
@@ -2211,15 +2233,15 @@ public class MixCalcActivity extends BaseActivity {
                     status += fermentedIncludedInWater ? getString(R.string.mix_ferment_include_water) : getString(R.string.mix_ferment_exclude_water);
                     status += "，";
                     status += fermentedIncludedInAverage ? getString(R.string.mix_ferment_include_avg) : getString(R.string.mix_ferment_exclude_avg);
-                    Toast.makeText(MixCalcActivity.this, status, Toast.LENGTH_SHORT).show();
+                    PillToast.show(MixCalcActivity.this, table, status);
                 } else {
-                    Toast.makeText(MixCalcActivity.this, getString(R.string.mix_toast_no_change), Toast.LENGTH_SHORT).show();
+                    PillToast.show(MixCalcActivity.this, table, getString(R.string.mix_toast_no_change));
                 }
             });
 
         } catch (Exception e) {
             Log.e(TAG, "显示发酵料计算设置对话框异常: " + e.getMessage());
-            Toast.makeText(this, getString(R.string.mix_toast_setting_fail), Toast.LENGTH_SHORT).show();
+            PillToast.show(this, table, getString(R.string.mix_toast_setting_fail));
         }
     }
 
@@ -2257,7 +2279,7 @@ public class MixCalcActivity extends BaseActivity {
             rebuildCompleteTable();
             saveAllData();
 
-            Toast.makeText(this, getString(R.string.mix_toast_reset_done), Toast.LENGTH_SHORT).show();
+            PillToast.show(this, table, getString(R.string.mix_toast_reset_done));
         } catch (Exception e) {
             Log.e(TAG, "重置数据异常: " + e.getMessage());
         }
@@ -2407,7 +2429,7 @@ public class MixCalcActivity extends BaseActivity {
         if (target < 0) {
             return;
         }
-        showStyledConfirmDialog70(
+        AppDialogs.showConfirm(this, 
                 getString(R.string.mix_order_title),
                 getString(R.string.mix_order_message, target + 1),
                 new String[]{getString(R.string.mix_btn_got_it)},
@@ -2418,7 +2440,7 @@ public class MixCalcActivity extends BaseActivity {
     // 第一次点第一行「棚号」：提示怎么填，并可直接进帮助（只提示一次）
     // 按钮顺序按用户习惯：确认类（知道了）放右手边
     private void showShedInputHint() {
-        showStyledConfirmDialog70(
+        AppDialogs.showConfirm(this, 
                 getString(R.string.mix_shed_hint_title),
                 getString(R.string.mix_shed_hint_msg),
                 new String[]{getString(R.string.mix_btn_view_help), getString(R.string.mix_btn_got_it)},
@@ -2676,13 +2698,13 @@ public class MixCalcActivity extends BaseActivity {
                 columnFixed.put(columnId, newFixedState);
                 saveColumnFixedState();
                 String msg = colName + (newFixedState ? getString(R.string.mix_col_fixed) : getString(R.string.mix_col_unfixed));
-                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+                PillToast.show(this, table, msg);
             } else if (operation.equals(getString(R.string.mix_menu_hide_col)) || operation.equals(getString(R.string.mix_menu_show_col))) {
                 boolean newVisibility = !columnVisibility.get(columnId);
                 columnVisibility.put(columnId, newVisibility);
                 saveColumnVisibility();
                 String msg = colName + (newVisibility ? getString(R.string.mix_col_shown) : getString(R.string.mix_col_hidden));
-                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+                PillToast.show(this, table, msg);
             } else if (operation.equals(getString(R.string.mix_menu_show_all))) {
                 showAllColumns();
                 return;
@@ -2713,7 +2735,7 @@ public class MixCalcActivity extends BaseActivity {
             if (hasChanged) {
                 saveColumnVisibility();
                 rebuildCompleteTable();
-                Toast.makeText(this, getString(R.string.mix_toast_shown_all), Toast.LENGTH_SHORT).show();
+                PillToast.show(this, table, getString(R.string.mix_toast_shown_all));
             }
         } catch (Exception e) {
             Log.e(TAG, "显示所有列异常: " + e.getMessage());
@@ -2735,7 +2757,7 @@ public class MixCalcActivity extends BaseActivity {
             if (hasChanged) {
                 saveColumnFixedState();
                 rebuildCompleteTable();
-                Toast.makeText(this, getString(R.string.mix_toast_unfixed_all), Toast.LENGTH_SHORT).show();
+                PillToast.show(this, table, getString(R.string.mix_toast_unfixed_all));
             }
         } catch (Exception e) {
             Log.e(TAG, "取消所有固定列异常: " + e.getMessage());
@@ -2756,7 +2778,7 @@ public class MixCalcActivity extends BaseActivity {
                     saveGlobalWaterPercentage();
                     // updateAllCalculations 会重绘（表头水百分比也由 provider 重新取）
                     updateAllCalculations();
-                    Toast.makeText(MixCalcActivity.this, getString(R.string.mix_water_pct_format, globalWaterPercentage), Toast.LENGTH_SHORT).show();
+                    PillToast.show(MixCalcActivity.this, table, getString(R.string.mix_water_pct_format, globalWaterPercentage));
                 } catch (Exception e) {
                     Log.e(TAG, "选择水百分比异常: " + e.getMessage());
                 }
@@ -2784,7 +2806,7 @@ public class MixCalcActivity extends BaseActivity {
                 ? getString(R.string.mix_reset_msg_has_data, filledRows)
                 : getString(R.string.mix_reset_msg_no_data);
 
-            showStyledConfirmDialog70(getString(R.string.mix_title_confirm_reset), message,
+            AppDialogs.showConfirm(this, getString(R.string.mix_title_confirm_reset), message,
                 new String[]{getString(R.string.btn_cancel), getString(R.string.mix_btn_confirm_reset)},
                 new int[]{0xFF666666, 0xFFD32F2F},
                 new DialogInterface.OnClickListener[]{null, (dialog, which) -> resetAllData()});
@@ -2836,7 +2858,7 @@ public class MixCalcActivity extends BaseActivity {
                     ? getString(R.string.mix_batch_selected, batchLabel(i))
                     : batchLabel(i);
         }
-        PopupWindow popup = createListPopup(getString(R.string.mix_batch_dialog_title), labels,
+        PopupWindow popup = AppDialogs.createListPopup(this, getString(R.string.mix_batch_dialog_title), labels,
                 (dialog, which) -> {
                     menuPopup.dismiss();
                     switchBatch(which);
@@ -2845,7 +2867,7 @@ public class MixCalcActivity extends BaseActivity {
         int[] loc = new int[2];
         anchorRow.getLocationOnScreen(loc);
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        int width = listPopupWidth();
+        int width = AppDialogs.listWidth(this);
         int x = Math.min(loc[0] + anchorRow.getWidth(), dm.widthPixels - width);
         int y = loc[1];
         View anchor = findViewById(R.id.main_layout);
@@ -3031,7 +3053,7 @@ public class MixCalcActivity extends BaseActivity {
         String[] lines = readAssetLines(consentFile);
         if (lines.length < 4) {
             Log.e(TAG, "隐私弹窗文案缺失/损坏，行数=" + lines.length);
-            Toast.makeText(this, getString(R.string.privacy_consent_load_fail), Toast.LENGTH_LONG).show();
+            PillToast.show(this, table, getString(R.string.privacy_consent_load_fail));
             finishAndRemoveTask();
             return;
         }
@@ -3098,7 +3120,7 @@ public class MixCalcActivity extends BaseActivity {
         } catch (Exception e) {
             // 弹窗构造失败：不能静默放行，明确提示并退出，等待用户重试
             Log.e(TAG, "显示隐私同意弹窗异常: " + e.getMessage(), e);
-            Toast.makeText(this, getString(R.string.privacy_consent_load_fail), Toast.LENGTH_LONG).show();
+            PillToast.show(this, table, getString(R.string.privacy_consent_load_fail));
             finishAndRemoveTask();
         }
     }
@@ -3256,7 +3278,7 @@ public class MixCalcActivity extends BaseActivity {
                 saveColumnFixedState();
                 rebuildCompleteTable();
                 popup.dismiss();
-                Toast.makeText(this, getString(R.string.mix_toast_column_saved), Toast.LENGTH_SHORT).show();
+                PillToast.show(this, table, getString(R.string.mix_toast_column_saved));
             });
 
             showPopupUnderTitleBar(popup);

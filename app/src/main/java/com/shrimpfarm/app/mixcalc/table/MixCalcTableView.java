@@ -77,6 +77,12 @@ public class MixCalcTableView extends ViewGroup {
     private boolean longPressFired;
     private boolean metricsReady;
 
+    // 表尾钉在右边缘的格（「重置」）：横向滚到哪儿都留在右下角，
+    // 列被隐藏时也照样画——不然用户就找不到重置了
+    private String pinnedFooterColumnId;
+    // 棚号列展示态画笔（字号按档位固定，不跟随系统字体）
+    private final ShedTextPainter shedTextPainter;
+
     private final Runnable longPressRunnable = new Runnable() {
         @Override
         public void run() {
@@ -112,6 +118,7 @@ public class MixCalcTableView extends ViewGroup {
         scroller = new OverScroller(context);
         editor = new CellEditorOverlay(this);
         editor.attach();
+        shedTextPainter = new ShedTextPainter(context.getResources().getDisplayMetrics().density);
     }
 
     // ------------------------------------------------------------------
@@ -121,6 +128,12 @@ public class MixCalcTableView extends ViewGroup {
     public void setColumnConfig(TableColumnConfig config) {
         this.config = config;
         requestRebuild();
+    }
+
+    // 表尾钉在右边缘的格（「重置」）：横向滚到哪儿都留在右下角
+    public void setPinnedFooterColumn(String columnId) {
+        this.pinnedFooterColumnId = columnId;
+        invalidate();
     }
 
     public void setRows(List<FeedData> rows) {
@@ -333,13 +346,18 @@ public class MixCalcTableView extends ViewGroup {
         if (!metricsReady || metrics.visual.isEmpty()) {
             return null;
         }
+        int top = getHeight() - metrics.footerHeight;
+        TableColumn pinned = pinnedFooterColumn();
+        if (pinned != null && pinned.id.equals(columnId)) {
+            int left = PinnedFooter.left(getWidth(), pinned.widthPx, metrics.fixedWidth);
+            return new Rect(left, top, left + pinned.widthPx, getHeight());
+        }
         int vi = metrics.visualIndex(columnId);
         if (vi < 0) {
             return null;
         }
         TableColumn col = metrics.visual.get(vi);
         int x = metrics.xOf(vi, offsetX);
-        int top = getHeight() - metrics.footerHeight;
         return new Rect(x, top, x + col.widthPx, getHeight());
     }
 
@@ -384,6 +402,33 @@ public class MixCalcTableView extends ViewGroup {
         int left = fixed ? 0 : metrics.fixedWidth;
         int right = fixed ? metrics.fixedWidth : metrics.viewWidth;
         return x + col.widthPx > left && x < right;
+    }
+
+    // 换格时把新格子滚进可视区（对齐鸿蒙 ensureEditorVisible）：目标格可能在屏幕外，
+    // 不滚过去用户就看不见输入框，还会以为「下一步 / 下一行」没反应。
+    void revealCell(int row, String columnId) {
+        if (!metricsReady || metrics.visual.isEmpty() || metrics.rowHeight <= 0) {
+            return;
+        }
+        int vi = metrics.visualIndex(columnId);
+        if (vi < 0) {
+            return;
+        }
+        int ny = RevealMath.scrollY(row, metrics.rowHeight, metrics.bodyHeight,
+                offsetY, metrics.maxScrollY);
+        int nx = RevealMath.scrollX(metrics.xBase[vi], metrics.width[vi],
+                metrics.fixedWidth, metrics.viewWidth, offsetX, metrics.maxScrollX,
+                vi < metrics.fixedCount);
+        if (nx == offsetX && ny == offsetY) {
+            return;
+        }
+        offsetX = nx;
+        offsetY = ny;
+        // 这是程序滚动，不是用户甩出去的：不走 onOffsetChanged()，
+        // 免得 editor.onScrolled() 把刚打开的浮层当成「滚出可见区」收掉
+        invalidate();
+        editor.layoutChild();
+        layoutNextRowButton();
     }
 
     // 纵向滚最小的距离，让这行完整落进表体里。已经看得见就不动。
@@ -793,6 +838,19 @@ public class MixCalcTableView extends ViewGroup {
         return super.performClick();
     }
 
+    // 表尾命中：钉住的「重置」先判，再按横向偏移找
+    private String footerColumnAt(float x) {
+        TableColumn pinned = pinnedFooterColumn();
+        if (pinned != null) {
+            int left = PinnedFooter.left(getWidth(), pinned.widthPx, metrics.fixedWidth);
+            if (PinnedFooter.hit(x, left, pinned.widthPx)) {
+                return pinned.id;
+            }
+        }
+        int vi = metrics.visualIndexAt(x, offsetX);
+        return vi < 0 ? null : metrics.visual.get(vi).id;
+    }
+
     private void handleTap(float x, float y) {
         if (y < metrics.headerHeight) {
             editor.end();
@@ -804,9 +862,9 @@ public class MixCalcTableView extends ViewGroup {
         }
         if (y >= getHeight() - metrics.footerHeight) {
             editor.end();
-            int vi = metrics.visualIndexAt(x, offsetX);
-            if (vi >= 0 && tapListener != null) {
-                tapListener.onFooterClick(metrics.visual.get(vi).id);
+            String footerColumnId = footerColumnAt(x);
+            if (footerColumnId != null && tapListener != null) {
+                tapListener.onFooterClick(footerColumnId);
             }
             return;
         }
@@ -896,23 +954,14 @@ public class MixCalcTableView extends ViewGroup {
         }
 
         int h = getHeight();
-        drawRegionBg(canvas, 0, 0, getWidth(), metrics.headerHeight, style.headerBg);
-        drawRegionBg(canvas, 0, metrics.headerHeight, getWidth(), h - metrics.footerHeight, style.bodyBg);
-        drawRegionBg(canvas, 0, h - metrics.footerHeight, getWidth(), h, style.footerBg);
+        CellPainter.regionBg(canvas, style, 0, 0, getWidth(), metrics.headerHeight, style.headerBg);
+        CellPainter.regionBg(canvas, style, 0, metrics.headerHeight, getWidth(), h - metrics.footerHeight, style.bodyBg);
+        CellPainter.regionBg(canvas, style, 0, h - metrics.footerHeight, getWidth(), h, style.footerBg);
 
         drawBody(canvas);
         drawHeader(canvas);
         drawFooter(canvas);
-        drawFrozenDivider(canvas);
-    }
-
-    private void drawRegionBg(Canvas canvas, int left, int top, int right, int bottom, int color) {
-        if (bottom <= top) {
-            return;
-        }
-        style.fillPaint.setStyle(Paint.Style.FILL);
-        style.fillPaint.setColor(color);
-        canvas.drawRect(left, top, right, bottom, style.fillPaint);
+        CellPainter.frozenDivider(canvas, style, metrics.fixedWidth, h);
     }
 
     private void drawBody(Canvas canvas) {
@@ -966,53 +1015,28 @@ public class MixCalcTableView extends ViewGroup {
         int right = x + col.widthPx;
         int bottom = y + metrics.rowHeight;
 
-        drawBox(canvas, left, top, right, bottom,
+        CellPainter.box(canvas, style, left, top, right, bottom,
                 style.bodyFill(state), style.bodyStroke(state), style.bodyStrokeWidth(state));
 
         String text = textProvider == null ? "" : textProvider.getCellText(row, col.id);
         if ("shed_number".equals(col.id)) {
-            // 棚号列：字号固定不缩，放不下自动换行
-            drawWrappedCellText(canvas, text, left, top, right, bottom, col.textColor, style.textPaint);
+            // 棚号列：字号固定不缩，放不下自动换行（画笔见 ShedTextPainter）
+            shedTextPainter.draw(canvas, text, left, top, right, bottom, col.textColor, style.textPaint);
         } else {
-            drawCellText(canvas, text, left, top, right, bottom, col.textColor, style.textPaint);
+            CellPainter.text(canvas, text, left, top, right, bottom, col.textColor, style.textPaint);
         }
     }
 
-    // 棚号列展示态专用：ShedDisplay.render 两行极简折叠、省略号只来自折叠算法、
-    // 放不下裁掉、系统不补任何 "…"。
-    // 字号固定 16dp：不乘任何缩放系数、不按内容自适应、也不跟随系统字体大小
-    //（用 density 而不是 scaledDensity 换算）。放不放得下由列宽保证
-    //（columnWidths 里 shed_number = 72dp，9 字符一行约 70dp）。
-    private static final int SHED_TEXT_SIZE_DP = 16;
+    // 棚号列的字号档位由 Activity 按窗口宽度（isTabletMode）设置；
+    // 字号与字符预算必须取同一个判据，所以统一由 ShedTextPainter 持有。
 
-    private void drawWrappedCellText(Canvas canvas, String text, int left, int top, int right, int bottom,
-                                     int color, Paint paint) {
-        if (TextUtils.isEmpty(text)) {
+    /** 棚号列显示档位：true = 11 列铺满（15dp/9 字符），false = 横向滚动（14dp/7 字符）。 */
+    public void setShedAllColumnsVisible(boolean allColumnsVisible) {
+        if (shedTextPainter.isFullMode() == allColumnsVisible) {
             return;
         }
-        paint.setColor(color);
-        List<String> lines = ShedDisplay.render(text);
-        if (lines.isEmpty()) {
-            return;
-        }
-        // 固定字号，不随内容、不随系统字体设置变（textPaint 是共用的，画完必须还原）
-        float originalTextSize = paint.getTextSize();
-        paint.setTextSize(dp(getContext(), SHED_TEXT_SIZE_DP));
-        Paint.FontMetrics fm = paint.getFontMetrics();
-        float lineH = fm.descent - fm.ascent;
-        float totalH = lineH * lines.size();
-        float cx = (left + right) / 2f;
-        float startY = (top + bottom) / 2f - totalH / 2f - fm.ascent;
-        canvas.save();
-        canvas.clipRect(left, top, right, bottom);
-        for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i);
-            // textPaint 是居中对齐（Paint.Align.CENTER），直接画在中心线
-            canvas.drawText(line, cx, startY + i * lineH, paint);
-        }
-        canvas.restore();
-
-        paint.setTextSize(originalTextSize);
+        shedTextPainter.setFullMode(allColumnsVisible);
+        invalidate();
     }
 
     private void drawHeader(Canvas canvas) {
@@ -1047,11 +1071,11 @@ public class MixCalcTableView extends ViewGroup {
         int top = 0;
         int right = x + col.widthPx;
 
-        drawBox(canvas, left, top, right, bottom,
+        CellPainter.box(canvas, style, left, top, right, bottom,
                 style.headerFill(state), style.headerStroke(state), style.headerStrokeWidth(state));
 
         String text = textProvider == null ? "" : textProvider.getHeaderText(col.id);
-        drawCellText(canvas, text, left, top, right, bottom, style.textBlack, style.headerTextPaint);
+        CellPainter.text(canvas, text, left, top, right, bottom, style.textBlack, style.headerTextPaint);
     }
 
     private void drawFooter(Canvas canvas) {
@@ -1062,6 +1086,9 @@ public class MixCalcTableView extends ViewGroup {
         canvas.clipRect(metrics.fixedWidth, top, getWidth(), bottom);
         for (int vi = metrics.fixedCount; vi < metrics.visual.size(); vi++) {
             TableColumn col = metrics.visual.get(vi);
+            if (isPinnedFooter(col.id)) {
+                continue;
+            }
             int x = metrics.xOf(vi, offsetX);
             if (x >= getWidth() || x + col.widthPx <= metrics.fixedWidth) {
                 continue;
@@ -1074,9 +1101,32 @@ public class MixCalcTableView extends ViewGroup {
         canvas.clipRect(0, top, metrics.fixedWidth, bottom);
         for (int vi = 0; vi < metrics.fixedCount; vi++) {
             TableColumn col = metrics.visual.get(vi);
+            if (isPinnedFooter(col.id)) {
+                continue;
+            }
             drawFooterCell(canvas, col, metrics.xOf(vi, offsetX), top, bottom);
         }
         canvas.restore();
+
+        // 「重置」钉在最右下角（对齐鸿蒙）：横向滚到哪儿都点得到，最后画所以盖在别人上面
+        TableColumn pinned = pinnedFooterColumn();
+        if (pinned != null) {
+            int left = PinnedFooter.left(getWidth(), pinned.widthPx, metrics.fixedWidth);
+            drawFooterCell(canvas, pinned, left, top, bottom);
+        }
+    }
+
+    // 钉住的表尾格：列被用户隐藏时也要画（配置里还留着这一列），否则重置就没了
+    private TableColumn pinnedFooterColumn() {
+        if (pinnedFooterColumnId == null || config == null || !metricsReady) {
+            return null;
+        }
+        TableColumn col = config.get(pinnedFooterColumnId);
+        return col == null || col.widthPx <= 0 ? null : col;
+    }
+
+    private boolean isPinnedFooter(String columnId) {
+        return pinnedFooterColumnId != null && pinnedFooterColumnId.equals(columnId);
     }
 
     private void drawFooterCell(Canvas canvas, TableColumn col, int x, int top, int bottom) {
@@ -1086,67 +1136,12 @@ public class MixCalcTableView extends ViewGroup {
         int left = x;
         int right = x + col.widthPx;
 
-        drawBox(canvas, left, top, right, bottom,
+        CellPainter.box(canvas, style, left, top, right, bottom,
                 style.footerFill(footerStyle), style.cellStroke, style.borderWidth);
 
         String text = textProvider == null ? "" : textProvider.getFooterText(col.id);
-        drawCellText(canvas, text, left, top, right, bottom,
+        CellPainter.text(canvas, text, left, top, right, bottom,
                 style.footerTextColor(footerStyle), style.textPaint);
-    }
-
-    private void drawFrozenDivider(Canvas canvas) {
-        if (metrics.fixedCount <= 0 || metrics.fixedWidth <= 0) {
-            return;
-        }
-        style.borderPaint.setStyle(Paint.Style.STROKE);
-        style.borderPaint.setColor(style.frozenDivider);
-        style.borderPaint.setStrokeWidth(1f);
-        canvas.drawLine(metrics.fixedWidth, 0, metrics.fixedWidth, getHeight(), style.borderPaint);
-    }
-
-    private void drawBox(Canvas canvas, int left, int top, int right, int bottom,
-                         int fill, int stroke, float strokeWidth) {
-        style.fillPaint.setStyle(Paint.Style.FILL);
-        style.fillPaint.setColor(fill);
-        canvas.drawRect(left, top, right, bottom, style.fillPaint);
-
-        if (strokeWidth > 0) {
-            style.borderPaint.setStyle(Paint.Style.STROKE);
-            style.borderPaint.setColor(stroke);
-            style.borderPaint.setStrokeWidth(strokeWidth);
-            float inset = strokeWidth / 2f;
-            canvas.drawRect(left + inset, top + inset, right - inset, bottom - inset,
-                    style.borderPaint);
-        }
-    }
-
-    private void drawCellText(Canvas canvas, String text, int left, int top, int right, int bottom,
-                              int color, Paint paint) {
-        if (TextUtils.isEmpty(text)) {
-            return;
-        }
-        paint.setColor(color);
-
-        // 文字比格子宽就缩小字号塞进去，防止超出单元格（英文表头词普遍比中文长）。
-        // textPaint 是共用的，缩完必须还原，不然会影响后面的格子。
-        float originalTextSize = paint.getTextSize();
-        float availWidth = (right - left) - 4f;
-        float textWidth = paint.measureText(text);
-        if (textWidth > availWidth && textWidth > 0) {
-            float scaled = originalTextSize * (availWidth / textWidth);
-            paint.setTextSize(Math.max(scaled, originalTextSize * 0.5f));
-        }
-
-        Paint.FontMetrics fm = paint.getFontMetrics();
-        float cx = (left + right) / 2f;
-        float cy = (top + bottom) / 2f - (fm.ascent + fm.descent) / 2f;
-
-        canvas.save();
-        canvas.clipRect(left, top, right, bottom);
-        canvas.drawText(text, cx, cy, paint);
-        canvas.restore();
-
-        paint.setTextSize(originalTextSize);
     }
 
     // ------------------------------------------------------------------
