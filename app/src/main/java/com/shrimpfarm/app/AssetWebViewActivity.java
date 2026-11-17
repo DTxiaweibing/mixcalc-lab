@@ -30,6 +30,8 @@ public class AssetWebViewActivity extends BaseActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 方向跟主页一致：清单里写 screenOrientation="behind"，
+        // 系统直接沿用下面那个 Activity 的方向，不会先横一下再转
         // 系统栏区域由我们自己用 padding 留出，不再让系统自动裁剪内容
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.WHITE);

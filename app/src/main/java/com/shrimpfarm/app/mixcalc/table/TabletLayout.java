@@ -5,7 +5,15 @@ package com.shrimpfarm.app.mixcalc.table;
  */
 public final class TabletLayout {
 
-    /** 平板布局的最小窗口宽度（dp）。低于它一律按手机布局：固定列宽 + 横向滚动。 */
+    /**
+     * 铺满档的最小窗口宽度（dp）。低于它一律按手机布局：固定列宽 + 横向滚动。
+     *
+     * <p>门槛卡在 600 不是随便取的：铺满档要把 11 列按比例压到窗宽，棚号列是 64dp 的基准，
+     * 窗口刚好 600dp 时它只剩 63dp，15dp 字号的两行文本已经是极限。
+     * 再往下压（试过 544dp），棚号列会掉到 57dp 左右，超出部分被 {@code clipRect} 直接裁掉
+     * （棚号列不补省略号），看起来就是号码被切——比分屏时滑一下更难接受，所以维持 600。
+     * 分屏窗口常在 560–600dp 这一档，属于「滑一下」的已知取舍。</p>
+     */
     public static final int TABLET_MIN_WIDTH_DP = 600;
 
     private TabletLayout() {
@@ -72,9 +80,9 @@ public final class TabletLayout {
      * 表格是否已经铺满全部列：全部列可见，且按当前布局算出来的自然总宽放得下。
      * 满足时说明没必要再提供「快捷设置」（没有列要藏），折叠/展开、分屏都按实时窗口算。
      *
-     * @param tabletMode 平板/宽窗口布局（按可见列均分）还是手机固定列宽
+     * @param tabletMode 平板/宽窗口布局（整表按比例缩放到屏宽）还是手机固定列宽
      */
-    public static boolean fillsAllColumns(int[] widthsDp, String[] columnIds, boolean[] visible,
+    public static boolean fillsAllColumns(int[] widthsDp, boolean[] visible,
                                           int screenWidthPx, float density, boolean tabletMode) {
         if (widthsDp == null || widthsDp.length == 0 || screenWidthPx <= 0) {
             return false;
@@ -87,7 +95,7 @@ public final class TabletLayout {
         }
         int total = 0;
         if (tabletMode) {
-            int[] widths = computeWidths(widthsDp, columnIds, visible, screenWidthPx, density);
+            int[] widths = computeWidths(widthsDp, visible, screenWidthPx, density);
             for (int width : widths) {
                 total += width;
             }
@@ -100,56 +108,50 @@ public final class TabletLayout {
     }
 
     /**
-     * 平板模式：按可见列数均分屏宽，再按列语义微调，最后整体缩放到屏宽。
+     * 平板模式：把各列的自然宽度（{@code widthsDp × density}）整体按同一比例放大/缩小，
+     * 让可见列加起来**正好等于**窗口宽度。
      *
-     * @param widthsDp  基础宽度（dp），仅用于列数
-     * @param columnIds 列标识，用于按语义加权
-     * @param visible   与 columnIds 等长的可见性
+     * <p>比例保持不变（序号最窄、棚号最宽），只是整体缩放，跟手机上看到的样子一致，
+     * 但平板上不会再有横向滚动、右侧也不会留白。取整误差补给最后一个可见列，
+     * 保证总宽严格等于窗口宽度（差 1px 都会多出一条滚动缝）。</p>
+     *
+     * @param widthsDp  各列基础宽度（dp），列被隐藏时照样参与「哪些列可见」的判断
+     * @param visible   与 widthsDp 等长的可见性；null 或短于列数都按可见处理
      */
-    public static int[] computeWidths(int[] widthsDp, String[] columnIds, boolean[] visible,
+    public static int[] computeWidths(int[] widthsDp, boolean[] visible,
                                       int screenWidthPx, float density) {
         int count = widthsDp.length;
         int[] widths = new int[count];
-
-        int visibleCount = 0;
-        for (int i = 0; i < count; i++) {
-            if (i < visible.length && visible[i]) {
-                visibleCount++;
-            }
+        if (count == 0 || screenWidthPx <= 0) {
+            return widths;
         }
-        if (visibleCount == 0) {
-            visibleCount = 1;
-        }
-        int base = screenWidthPx / visibleCount;
-        int minWidth = Math.round(50 * density);
-        int maxWidth = Math.round(120 * density);
 
+        int[] natural = new int[count];
+        int naturalTotal = 0;
+        int lastVisible = -1;
         for (int i = 0; i < count; i++) {
-            if (i >= visible.length || !visible[i]) {
-                widths[i] = 0;
+            if (visible != null && i < visible.length && !visible[i]) {
                 continue;
             }
-            String id = columnIds[i];
-            int width = base;
-            if ("shed_number".equals(id) || "weighed_feed".equals(id)) {
-                width = (int) (base * 1.2);
-            }
-            if ("seq".equals(id) || "average_feed".equals(id)) {
-                width = (int) (base * 0.8);
-            }
-            widths[i] = Math.max(minWidth, Math.min(width, maxWidth));
+            natural[i] = Math.max(1, Math.round(widthsDp[i] * density));
+            naturalTotal += natural[i];
+            lastVisible = i;
+        }
+        if (naturalTotal <= 0 || lastVisible < 0) {
+            return widths;
         }
 
-        int total = 0;
-        for (int w : widths) {
-            total += w;
-        }
-        if (total > 0 && Math.abs(total - screenWidthPx) > 50) {
-            float scale = (float) screenWidthPx / total;
-            for (int i = 0; i < count; i++) {
-                widths[i] = (int) (widths[i] * scale);
+        float scale = (float) screenWidthPx / naturalTotal;
+        int scaledTotal = 0;
+        for (int i = 0; i < count; i++) {
+            if (natural[i] <= 0) {
+                continue;
             }
+            widths[i] = Math.max(1, (int) (natural[i] * scale));
+            scaledTotal += widths[i];
         }
+        // 取整误差补给最后一列：总宽必须正好是屏宽
+        widths[lastVisible] = Math.max(1, widths[lastVisible] + (screenWidthPx - scaledTotal));
         return widths;
     }
 }

@@ -2,6 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+        方向在清单里锁死竖屏：系统在建启动窗口之前就按竖屏建，横着拿手机点开也不会
+        「先横一下再转回来」。平板同样竖屏（竖屏窗口宽度也在 800dp 左右，11 列照样按比例铺满）。
+
+        为什么不按设备分流：清单引用的资源不能随屏幕配置变化（lint ManifestResource，
+        PackageManager 只用默认配置解析），values-sw600dp 那份永远不会生效；
+        而 onCreate 里 setRequestedOrientation 一定晚于系统建窗口，必然转一次。
+        要平板也能横屏，只能单独打一个清单里写 unspecified 的包。详见 CHANGELOG 第五轮。
+    -->
     <application
         android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules"
@@ -27,10 +36,12 @@
             </intent-filter>
         </activity>
 
+        <!-- 帮助页沿用下面那个 Activity 的方向（behind），打开帮助不会再转一次 -->
         <activity
             android:name=".AssetWebViewActivity"
             android:theme="@style/AppTheme.NoWindowBackground"
-            android:screenOrientation="portrait"
+            android:screenOrientation="behind"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboard|keyboardHidden|navigation|uiMode|layoutDirection"
             android:exported="false" />
 
     </application>

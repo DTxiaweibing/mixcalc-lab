@@ -69,6 +69,7 @@ import com.shrimpfarm.app.mixcalc.ui.AppDialogs;
 import com.shrimpfarm.app.mixcalc.ui.FlowLayout;
 import com.shrimpfarm.app.mixcalc.ui.PillToast;
 import com.shrimpfarm.app.mixcalc.ui.PopupGeometry;
+import com.shrimpfarm.app.mixcalc.ui.WindowWidthWatcher;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -432,6 +433,9 @@ public class MixCalcActivity extends BaseActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // 方向由清单的 screenOrientation="portrait" 决定（系统建启动窗口之前就生效，
+        // 所以横着拿手机点开也不会先横一下）。这里不再运行时改方向。
+
         // API 35+ 强制 edge-to-edge：先把窗口设为 edge-to-edge，首帧就按 insets 给系统栏留白；
         // 老系统仍由窗口自己让位，spacer 保持 0，避免重复留白。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
@@ -445,6 +449,9 @@ public class MixCalcActivity extends BaseActivity {
 
             // ---------- 系统栏留白（状态栏深绿 / 底部导航栏白），由 WindowInsets 驱动 ----------
             setupSystemBarInsets();
+            // 分屏 / 折叠展开 / 改窗口大小：等根布局拿到新宽度再重算列宽。
+            // 基准用建表时的宽度，首帧布局出来不一样（分屏/自由窗口）就立刻纠正一次。
+            WindowWidthWatcher.attach(findViewById(R.id.main_layout), getScreenWidth(), this::rebuildForNewWidth);
 
             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -526,6 +533,12 @@ public class MixCalcActivity extends BaseActivity {
         }
         lp.height = heightPx;
         spacer.setLayoutParams(lp);
+    }
+
+    /** 根布局拿到新宽度后：按新窗口重算列宽并重搭表格。 */
+    private void rebuildForNewWidth() {
+        initTabletAdaptiveSettings();
+        rebuildCompleteTable();
     }
 
     private void initColumnNames() {
@@ -1056,24 +1069,19 @@ public class MixCalcActivity extends BaseActivity {
         onWindowMetricsChanged();
     }
 
-    // 窗口尺寸/形态变了：重算平板判定与列宽，旧菜单直接关掉，下次打开按新窗口判断。
+    // 窗口尺寸/形态变了：先把待转池和旧菜单作废，下次操作按新窗口判断。
+    // 列宽不在这里算（此刻根布局还是旧宽度），交给 WindowWidthWatcher 在布局后重算。
     private void onWindowMetricsChanged() {
-        // 转屏 / 折叠 / 分屏都不是"点开另一行气泡"，待转池作废
+        // 折叠 / 分屏都不是"点开另一行气泡"，待转池作废
         clearPendingTransfer();
-        initTabletAdaptiveSettings();
         dismissOpenPopups();
-        rebuildCompleteTable();
     }
 
     private void dismissOpenPopups() {
-        if (mainMenuPopup != null) {
-            mainMenuPopup.dismiss();
-        }
-        if (columnSettingsPopup != null) {
-            columnSettingsPopup.dismiss();
-        }
-        if (shedListPopup != null) {
-            shedListPopup.dismiss();
+        for (PopupWindow popup : new PopupWindow[]{mainMenuPopup, columnSettingsPopup, shedListPopup}) {
+            if (popup != null) {
+                popup.dismiss();
+            }
         }
     }
 
@@ -1788,12 +1796,14 @@ public class MixCalcActivity extends BaseActivity {
         Log.i(TAG, "布局模式: " + (isTabletMode ? "平板" : "手机")
                 + ", 窗口宽 " + widthDp + "dp (阈值 " + TabletLayout.TABLET_MIN_WIDTH_DP + "dp)");
         if (isTabletMode) {
+            // 平板：11 列按原有比例整体缩放，正好撑满窗口宽度（不再有横向滚动）
             adaptiveColumnWidths = TabletLayout.computeWidths(
-                    columnWidths, columnIds, visibleColumns(), getScreenWidth(), density);
+                    columnWidths, visibleColumns(), getScreenWidth(), density);
         } else {
             adaptiveColumnWidths = TabletLayout.fixedWidths(columnWidths, density);
         }
-        // 隐藏列太多时把可见列铺满屏宽（否则右侧留白，像少了一列）
+        // 手机档藏了列以后，可见列还铺不满屏宽，右侧会留白（像少了一列），这里按比例补满；
+        // 平板档上一步已经正好铺满，这里不会改动
         TabletLayout.fillToWidth(adaptiveColumnWidths, visibleColumns(), getScreenWidth());
         // 棚号列字号与字符预算取同一判据（与鸿蒙 shedAllColumnsVisible 同源）：
         // 铺满档 15dp/9 字符，滚动档 14dp/7 字符
@@ -1805,7 +1815,7 @@ public class MixCalcActivity extends BaseActivity {
     private void recalcAdaptiveWidths() {
         float density = getResources().getDisplayMetrics().density;
         adaptiveColumnWidths = TabletLayout.computeWidths(
-                columnWidths, columnIds, visibleColumns(), getScreenWidth(), density);
+                columnWidths, visibleColumns(), getScreenWidth(), density);
         TabletLayout.fillToWidth(adaptiveColumnWidths, visibleColumns(), getScreenWidth());
     }
 
@@ -1814,7 +1824,7 @@ public class MixCalcActivity extends BaseActivity {
      * 满足时菜单不再出现「快捷设置」；折叠/展开、分屏后按实时窗口重新判断。
      */
     private boolean isElevenColumnsFilled() {
-        return TabletLayout.fillsAllColumns(columnWidths, columnIds, visibleColumns(),
+        return TabletLayout.fillsAllColumns(columnWidths, visibleColumns(),
                 getScreenWidth(), getResources().getDisplayMetrics().density, isTabletMode);
     }
 
