@@ -38,6 +38,17 @@ public class PopupGeometryTest {
     }
 
     @Test
+    public void thirdWidthIsOneThirdOfWindow() {
+        assertEquals(360, PopupGeometry.thirdWidth(1080));
+        assertEquals(106, PopupGeometry.thirdWidth(320));
+        // 窗口宽 1/3 取整：2401 → 800（余 1px 丢掉）
+        assertEquals(800, PopupGeometry.thirdWidth(2401));
+        // 退化入参不返回 0 宽弹窗
+        assertEquals(1, PopupGeometry.thirdWidth(0));
+        assertEquals(1, PopupGeometry.thirdWidth(2));
+    }
+
+    @Test
     public void leftEdgeAlignsToCell() {
         // 棚数格左边 300 → 弹窗左边也是 300，不因为弹窗宽就往左挪
         assertEquals(300, PopupGeometry.leftAlignedX(300, 1080));

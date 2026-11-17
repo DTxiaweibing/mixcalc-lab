@@ -1351,7 +1351,7 @@ public class MixCalcActivity extends BaseActivity {
 
         try {
             PopupWindow menu = AppDialogs.createListPopup(this, getString(R.string.mix_shed_menu_title),
-                    labels.toArray(new String[0]), (dialog, which) -> {
+                    labels.toArray(new String[0]), AppDialogs.shedMenuWidth(this, getScreenWidth(), isTabletMode), (dialog, which) -> {
                         if (which < 0 || which >= actions.size()) {
                             return;
                         }
@@ -1359,7 +1359,7 @@ public class MixCalcActivity extends BaseActivity {
                                 popup);
                     });
             // 菜单右边缘跟气泡右边缘对齐（header 左边缘就是气泡左边缘）
-            int offsetX = Math.max(0, popupWidth - AppDialogs.listWidth(this) - dpToPx(10));
+            int offsetX = Math.max(0, popupWidth - menu.getWidth() - dpToPx(10));
             menu.showAsDropDown(anchor, offsetX, dpToPx(2));
         } catch (Exception e) {
             Log.e(TAG, "showShedMenu: " + e.getMessage(), e);

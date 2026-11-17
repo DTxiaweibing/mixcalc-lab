@@ -81,6 +81,13 @@ public final class AppDialogs {
      */
     public static PopupWindow createListPopup(Activity activity, String title, String[] items,
                                               final DialogInterface.OnClickListener listener) {
+        return createListPopup(activity, title, items, listWidth(activity), listener);
+    }
+
+    /** 同上，可指定宽度（「棚号操作」菜单在手机档用窗口宽的 1/3）。 */
+    public static PopupWindow createListPopup(Activity activity, String title, String[] items,
+                                              int widthPx,
+                                              final DialogInterface.OnClickListener listener) {
         LinearLayout container = new LinearLayout(activity);
         container.setOrientation(LinearLayout.VERTICAL);
         container.setBackgroundResource(R.drawable.bg_dialog);
@@ -124,7 +131,7 @@ public final class AppDialogs {
             }
         }
 
-        popup.setWidth(listWidth(activity));
+        popup.setWidth(widthPx);
         popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
         return popup;
     }
@@ -133,6 +140,13 @@ public final class AppDialogs {
     public static int listWidth(Activity activity) {
         DisplayMetrics dm = activity.getResources().getDisplayMetrics();
         return Math.min(dm.widthPixels, dp(activity, 180));
+    }
+
+    /**
+     * 「棚号操作」菜单宽度：手机档取窗口宽的 1/3，平板档维持列表定宽。
+     */
+    public static int shedMenuWidth(Activity activity, int windowWidthPx, boolean tabletMode) {
+        return tabletMode ? listWidth(activity) : PopupGeometry.thirdWidth(windowWidthPx);
     }
 
     /** 1px 灰色分隔线，列表弹窗和确认框按钮之间共用。 */

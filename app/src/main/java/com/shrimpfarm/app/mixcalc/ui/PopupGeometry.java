@@ -14,6 +14,17 @@ public final class PopupGeometry {
     }
 
     /**
+     * 窗口宽的 1/3（向下取整，至少 1px）。
+     *
+     * <p>只有「棚号操作」菜单在手机档用它：那个菜单只有全选/反选/删除/转出/转入几个两字项，
+     * 180dp 定宽在小屏上显得太宽、离气泡太远；取 1/3 窗宽既贴住气泡又不挡表格。
+     * 平板档不用它，仍是列表定宽（{@code AppDialogs.listWidth}）。</p>
+     */
+    public static int thirdWidth(int windowWidthPx) {
+        return Math.max(1, windowWidthPx / 3);
+    }
+
+    /**
      * 表头弹窗右边缘对齐：弹窗右边缘贴住被点单元格右边缘，靠左/靠右自动夹回屏幕内。
      *
      * @param cellRightPx  被点单元格右边缘（屏幕坐标）
