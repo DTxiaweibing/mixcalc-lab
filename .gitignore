@@ -31,3 +31,11 @@ keystore.properties
 # 临时帧/工作目录（不入库）
 .tmp-frames/
 .workbuddy/
+
+# vivo 传包凭据（本地私密，绝不入库）
+scripts/vivo_credentials.json
+.vivo/
+
+# Python 缓存
+__pycache__/
+*.pyc

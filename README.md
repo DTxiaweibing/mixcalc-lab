@@ -92,11 +92,24 @@ docs/                                          版本说明、应用市场文案
 表格是**一个自绘 View**（`MixCalcTableView`）而不是每格一个控件，几百个格子也不会卡；
 单元格编辑用浮层输入框，随滚动跟随。
 
+## 自己上传到应用市场
+
+vivo 官方 MCP 只能查不能传，所以仓库里带了一个零依赖传包 CLI（纯标准库）：
+
+```powershell
+python scripts\vivo_publish.py doctor --apk "dist\秒算虾料-0.3.7-release.apk"   # 自检
+python scripts\vivo_publish.py upload --apk "dist\秒算虾料-0.3.7-release.apk"   # 上传，返回 serialNumber
+```
+
+也可以把 APK 拖到 `scripts\vivo-upload.cmd` 上双击运行。凭据只放本机，
+配置与错误码见 [docs/vivo-传包.md](docs/vivo-传包.md)。
+
 ## 文档
 
 | 文件 | 内容 |
 | --- | --- |
 | [CHANGELOG.md](CHANGELOG.md) | 版本更新日志（0.3.3 起） |
+| [docs/vivo-传包.md](docs/vivo-传包.md) | 自己传包：凭据配置、命令、错误码 |
 | [docs/RELEASE-0.3.7.md](docs/RELEASE-0.3.7.md) | 本版升级说明（面向用户） |
 | [docs/应用市场更新说明-0.3.7.md](docs/应用市场更新说明-0.3.7.md) | 应用市场「更新内容」可粘贴文案 |
 | [docs/安卓端同步清单-鸿蒙改动全记录.md](docs/安卓端同步清单-鸿蒙改动全记录.md) | 与鸿蒙版逐条对齐的记录 |
