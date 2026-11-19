@@ -77,3 +77,14 @@ python scripts\vivo_publish.py upload --apk ... --sandbox
 - vivo 通常不受理同版本号覆盖，替换线上包必须先升 `versionCode`。
 - 凭据只放本机；`scripts/vivo_credentials.json` 与 `~/.vivo/` 都已在 `.gitignore` 中。
 - 单元测试：`python scripts\test_vivo_publish.py -v`（不联网，28 项）。
+
+## 6. 已知限制：2026-11 未能拿到密钥
+
+本账号在控制台里「API 管理」页显示**无权查看**，申请不到 `access_key` / `access_secret`，
+因此上面的 CLI 目前只能跑 `doctor` 与 `upload --dry-run`，真上传用不了。
+
+- 官方文档的入口是「管理中心 → 账号管理 → API管理 → 立即开通」，
+  客服与第三方工具的说法是「管理中心 → 开放能力 → API传包 → 申请开通」，两处都受账号权限控制。
+- 有第三方资料称该能力**只对企业开发者开放**；个人开发者可正常上架应用，但未必能开通传包接口。
+- 现阶段的处理：继续在网页手动上传。若日后账号升级为企业号、或权限放开，**脚本无需改动**，
+  按第 1 节填好密钥即可直接 `upload`。
